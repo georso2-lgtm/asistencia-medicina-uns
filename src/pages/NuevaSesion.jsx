@@ -226,17 +226,8 @@ function NuevaSesion() {
       <div style={card}>
         <h2 style={title}>Nueva sesión académica</h2>
 
-        {mensaje && (
-          <div style={{
-            ...alert,
-            background: esError ? '#fee2e2' : '#dcfce7',
-            color: esError ? '#991b1b' : '#166534'
-          }}>
-            {mensaje}
-          </div>
-        )}
-
-        <form onSubmit={guardarSesion} style={form}>
+        
+           <form onSubmit={guardarSesion} style={form}>
           <div>
             <label style={label}>Docente responsable</label>
             <input
@@ -287,9 +278,10 @@ function NuevaSesion() {
               style={input}
             >
               <option value="TEORIA">TEORÍA</option>
-              <option value="PRACTICA">PRÁCTICA</option>
-              <option value="LABORATORIO">LABORATORIO</option>
-              <option value="SEMINARIO">SEMINARIO</option>
+              <option value="LABORATORIO">PRÁCTICA </option>
+              <option value="PRACTICA">PRÁCTICA SEMINARIO</option>
+              <option value="LABORATORIO">PRÁCTICA LABORATORIO</option>
+              <option value="SEMINARIO">PRÁCTICA DISCUCION DE CASO</option>
             </select>
           </div>
 
@@ -368,6 +360,17 @@ function NuevaSesion() {
           >
             {guardando ? 'Guardando...' : 'Crear sesión'}
           </button>
+
+          {mensaje && (
+          <div style={{
+            ...alert,
+            background: esError ? '#fee2e2' : '#dcfce7',
+            color: esError ? '#991b1b' : '#166534'
+          }}>
+            {mensaje}
+          </div>
+        )}
+
         </form>
       </div>
     </div>
