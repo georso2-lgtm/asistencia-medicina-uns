@@ -1,0 +1,36 @@
+.lista-container {
+  padding: 30px;
+  font-family: Arial, sans-serif;
+}
+
+.lista-container h2 {
+  margin-bottom: 20px;
+  color: #0f172a;
+}
+
+.tabla-container {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+}
+
+thead {
+  background: #0284c7;
+  color: white;
+}
+
+th,
+td {
+  padding: 14px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+tr:hover {
+  background: #f8fafc;
+}
