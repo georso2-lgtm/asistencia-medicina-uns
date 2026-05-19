@@ -272,7 +272,7 @@ function TomarAsistencia() {
     est => asistencias[est.codigo] === 'Justificado'
   ).length
 
-  const pendientes = totalEsperados - marcadosQR
+  
 
   const esError =
     mensaje.includes('Error') ||
@@ -335,8 +335,7 @@ function TomarAsistencia() {
           <div style={statsFila}>
             <Card titulo="Esperados" valor={totalEsperados} fondo="#f8fafc" />
             <Card titulo="Marcados QR" valor={marcadosQR} fondo="#dcfce7" />
-            <Card titulo="Pendientes" valor={pendientes} fondo="#fef9c3" />
-          </div>
+           </div>
 
           <div style={statsFila}>
             <Card titulo="Presentes" valor={presentes} fondo="#e0f2fe" />
