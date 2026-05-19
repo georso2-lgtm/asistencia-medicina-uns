@@ -278,10 +278,10 @@ function NuevaSesion() {
               style={input}
             >
               <option value="TEORIA">TEORÍA</option>
-              <option value="LABORATORIO">PRÁCTICA </option>
-              <option value="PRACTICA">PRÁCTICA SEMINARIO</option>
-              <option value="LABORATORIO">PRÁCTICA LABORATORIO</option>
-              <option value="SEMINARIO">PRÁCTICA DISCUCION DE CASO</option>
+              <option value="PRACTICA">PRÁCTICA </option>
+              <option value="LABORATORIO">PRÁCTICA EN LABORATORIO</option>
+              <option value="SEMINARIO">PRÁCTICA DE SEMINARIO</option>
+              <option value="DISCUCION DE CASO">PRÁCTICA DISCUCION DE CASO</option>
             </select>
           </div>
 
