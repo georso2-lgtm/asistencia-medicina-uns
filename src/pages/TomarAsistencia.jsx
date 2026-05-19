@@ -335,6 +335,7 @@ function TomarAsistencia() {
           <div style={statsFila}>
             <Card titulo="Esperados" valor={totalEsperados} fondo="#f8fafc" />
             <Card titulo="Marcados QR" valor={marcadosQR} fondo="#dcfce7" />
+            <Card titulo="Justificados" valor={justificados} fondo="#f3e8ff" />
            </div>
 
           <div style={statsFila}>
@@ -343,8 +344,7 @@ function TomarAsistencia() {
             <Card titulo="Faltas" valor={faltas} fondo="#fee2e2" />
           </div>
 
-          <div style={statsFila}>
-            <Card titulo="Justificados" valor={justificados} fondo="#f3e8ff" />
+                      
           </div>
 
           <div style={card}>
@@ -467,7 +467,7 @@ function Card({ titulo, valor, fondo }) {
 }
 
 const page = {
-  padding: '18px 10px 24px',
+  padding: '16px 10px 24px',
   fontFamily: 'Arial'
 }
 
