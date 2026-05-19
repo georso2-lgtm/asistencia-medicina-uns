@@ -272,8 +272,7 @@ function TomarAsistencia() {
     est => asistencias[est.codigo] === 'Justificado'
   ).length
 
-  const pendientes = totalEsperados - marcadosQR
-
+  
   const esError =
     mensaje.includes('Error') ||
     mensaje.includes('No puede') ||

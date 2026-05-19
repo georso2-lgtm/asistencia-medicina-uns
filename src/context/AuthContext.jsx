@@ -27,20 +27,13 @@ export function AuthProvider({ children }) {
       .eq('id', usuario.id)
       .maybeSingle()
 
-    if (error) {
-      console.error('Error cargando perfil:', error)
-      setPerfil(null)
-      return null
-    }
-
-    if (!data) {
-      console.warn('Usuario sin perfil asignado:', usuario.email)
+    if (error || !data) {
+      console.error('Error o perfil no encontrado:', error)
       setPerfil(null)
       return null
     }
 
     if (data.estado && data.estado !== 'Activo') {
-      console.warn('Usuario inactivo:', usuario.email)
       setPerfil(null)
       return null
     }
@@ -50,46 +43,23 @@ export function AuthProvider({ children }) {
   }
 
   const verificarSesion = async () => {
-    let timeoutSeguridad
-
     try {
       setLoading(true)
 
-      timeoutSeguridad = setTimeout(() => {
-        console.warn('Timeout de seguridad en autenticación')
+      const resultado = await Promise.race([
+        supabase.auth.getSession(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Tiempo agotado verificando sesión')), 6000)
+        )
+      ])
 
-        setSession(null)
-        setUser(null)
-        setPerfil(null)
-        setLoading(false)
-      }, 6000)
-
-      const {
-        data: { session: sesionActual },
-        error
-      } = await supabase.auth.getSession()
-
-      if (error) {
-        console.error('Error obteniendo sesión:', error)
-
-        clearTimeout(timeoutSeguridad)
-
-        setSession(null)
-        setUser(null)
-        setPerfil(null)
-        setLoading(false)
-
-        return
-      }
+      const sesionActual = resultado?.data?.session
 
       if (!sesionActual?.user) {
-        clearTimeout(timeoutSeguridad)
-
         setSession(null)
         setUser(null)
         setPerfil(null)
         setLoading(false)
-
         return
       }
 
@@ -98,13 +68,9 @@ export function AuthProvider({ children }) {
 
       await cargarPerfil(sesionActual.user)
 
-      clearTimeout(timeoutSeguridad)
-
       setLoading(false)
     } catch (error) {
-      console.error('Error inesperado verificando sesión:', error)
-
-      clearTimeout(timeoutSeguridad)
+      console.error('verificarSesion:', error)
 
       setSession(null)
       setUser(null)
@@ -114,170 +80,106 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    let activo = true
-    let timeoutSeguridad
-
-    const iniciar = async () => {
-      try {
-        setLoading(true)
-
-        timeoutSeguridad = setTimeout(() => {
-          if (!activo) return
-
-          console.warn('Timeout inicial de autenticación')
-
-          setSession(null)
-          setUser(null)
-          setPerfil(null)
-          setLoading(false)
-        }, 6000)
-
-        const {
-          data: { session: sesionInicial },
-          error
-        } = await supabase.auth.getSession()
-
-        if (!activo) return
-
-        if (error) {
-          console.error('Error sesión inicial:', error)
-
-          clearTimeout(timeoutSeguridad)
-
-          setSession(null)
-          setUser(null)
-          setPerfil(null)
-          setLoading(false)
-
-          return
-        }
-
-        if (!sesionInicial?.user) {
-          clearTimeout(timeoutSeguridad)
-
-          setSession(null)
-          setUser(null)
-          setPerfil(null)
-          setLoading(false)
-
-          return
-        }
-
-        setSession(sesionInicial)
-        setUser(sesionInicial.user)
-
-        await cargarPerfil(sesionInicial.user)
-
-        if (!activo) return
-
-        clearTimeout(timeoutSeguridad)
-
-        setLoading(false)
-      } catch (error) {
-        if (!activo) return
-
-        console.error('Error inicial AuthContext:', error)
-
-        clearTimeout(timeoutSeguridad)
-
-        setSession(null)
-        setUser(null)
-        setPerfil(null)
-        setLoading(false)
-      }
-    }
-
-    iniciar()
+    verificarSesion()
 
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange(async (_event, nuevaSesion) => {
-      if (!activo) return
+    } = supabase.auth.onAuthStateChange((_event, nuevaSesion) => {
+      setTimeout(async () => {
+        if (!nuevaSesion?.user) {
+          setSession(null)
+          setUser(null)
+          setPerfil(null)
+          setLoading(false)
+          return
+        }
 
-      setLoading(true)
+        setSession(nuevaSesion)
+        setUser(nuevaSesion.user)
 
-      if (!nuevaSesion?.user) {
-        setSession(null)
-        setUser(null)
-        setPerfil(null)
+        await cargarPerfil(nuevaSesion.user)
+
         setLoading(false)
-        return
-      }
-
-      setSession(nuevaSesion)
-      setUser(nuevaSesion.user)
-
-      await cargarPerfil(nuevaSesion.user)
-
-      setLoading(false)
+      }, 0)
     })
 
     return () => {
-      activo = false
-
-      if (timeoutSeguridad) {
-        clearTimeout(timeoutSeguridad)
-      }
-
       subscription?.unsubscribe()
     }
   }, [])
 
   const login = async (email, password) => {
-    setLoading(true)
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
-
-    if (error) {
+    try {
       setLoading(false)
+
+      const resultado = await Promise.race([
+        supabase.auth.signInWithPassword({
+          email,
+          password
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Tiempo agotado al iniciar sesión')), 8000)
+        )
+      ])
+
+      if (resultado.error) {
+        return {
+          ok: false,
+          error: resultado.error.message
+        }
+      }
+
+      const usuario = resultado.data.user
+      const sesionNueva = resultado.data.session
+
+      const perfilUsuario = await cargarPerfil(usuario)
+
+      if (!perfilUsuario) {
+        return {
+          ok: false,
+          error: 'Usuario sin perfil asignado.'
+        }
+      }
+
+      setSession(sesionNueva)
+      setUser(usuario)
+      setPerfil(perfilUsuario)
+
+      return {
+        ok: true,
+        perfil: perfilUsuario
+      }
+    } catch (error) {
+      console.error('login:', error)
+
       return {
         ok: false,
         error: error.message
       }
     }
-
-    const perfilUsuario = await cargarPerfil(data.user)
-
-    setSession(data.session)
-    setUser(data.user)
-    setLoading(false)
-
-    if (!perfilUsuario) {
-      return {
-        ok: false,
-        error: 'Usuario sin perfil asignado.'
-      }
-    }
-
-    return {
-      ok: true,
-      perfil: perfilUsuario
-    }
   }
 
   const logout = async () => {
     try {
-      setLoading(true)
-
       localStorage.clear()
       sessionStorage.clear()
+
+      setSession(null)
+      setUser(null)
+      setPerfil(null)
+      setLoading(false)
 
       await Promise.race([
         supabase.auth.signOut(),
         new Promise(resolve => setTimeout(resolve, 1500))
       ])
 
-      setSession(null)
-      setUser(null)
-      setPerfil(null)
-      setLoading(false)
-
       window.location.replace('/login')
     } catch (error) {
-      console.error('Error cerrando sesión:', error)
+      console.error('logout:', error)
+
+      localStorage.clear()
+      sessionStorage.clear()
 
       setSession(null)
       setUser(null)
@@ -288,19 +190,19 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const value = {
-    session,
-    user,
-    perfil,
-    loading,
-    login,
-    logout,
-    verificarSesion,
-    cargarPerfil
-  }
-
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        session,
+        user,
+        perfil,
+        loading,
+        login,
+        logout,
+        verificarSesion,
+        cargarPerfil
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
