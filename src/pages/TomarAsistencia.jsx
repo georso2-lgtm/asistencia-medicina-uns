@@ -272,7 +272,8 @@ function TomarAsistencia() {
     est => asistencias[est.codigo] === 'Justificado'
   ).length
 
-  
+  const pendientes = totalEsperados - marcadosQR
+
   const esError =
     mensaje.includes('Error') ||
     mensaje.includes('No puede') ||
@@ -467,7 +468,7 @@ function Card({ titulo, valor, fondo }) {
 }
 
 const page = {
-  padding: '18px 10px 24px',
+  padding: '80px 10px 24px',
   fontFamily: 'Arial'
 }
 
