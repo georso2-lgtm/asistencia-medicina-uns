@@ -345,8 +345,6 @@ function TomarAsistencia() {
           </div>
 
                       
-          </div>
-
           <div style={card}>
             <h3 style={{ marginTop: 0 }}>QR y estado de sesión</h3>
 
