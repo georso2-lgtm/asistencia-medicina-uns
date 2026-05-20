@@ -15,6 +15,14 @@ function Estudiantes() {
     grupo: ''
   })
 
+  const [editando, setEditando] = useState(null)
+
+  const [formEditar, setFormEditar] = useState({
+    codigo: '',
+    nombre_completo: '',
+    grupo: ''
+  })
+
   useEffect(() => {
     cargarAsignaturas()
   }, [])
@@ -73,9 +81,7 @@ function Estudiantes() {
   const normalizarGrupo = (valor) => {
     const texto = normalizarTexto(valor).toUpperCase()
     if (!texto) return 'GRUPO ÚNICO'
-
     if (texto.startsWith('GRUPO')) return texto
-
     return texto
   }
 
@@ -223,8 +229,70 @@ function Estudiantes() {
     cargarEstudiantes()
   }
 
+  const iniciarEdicion = (estudiante) => {
+    setEditando(estudiante.id)
+
+    setFormEditar({
+      codigo: estudiante.codigo || '',
+      nombre_completo: estudiante.nombre_completo || '',
+      grupo: estudiante.grupo || ''
+    })
+
+    setMensaje('')
+  }
+
+  const cancelarEdicion = () => {
+    setEditando(null)
+
+    setFormEditar({
+      codigo: '',
+      nombre_completo: '',
+      grupo: ''
+    })
+  }
+
+  const guardarEdicion = async (estudiante) => {
+    setMensaje('')
+
+    const codigo = normalizarTexto(formEditar.codigo)
+    const nombreCompleto = normalizarTexto(formEditar.nombre_completo).toUpperCase()
+    const grupo = normalizarGrupo(formEditar.grupo)
+
+    if (!codigo || !nombreCompleto) {
+      setMensaje('Ingrese código y nombre completo.')
+      return
+    }
+
+    const confirmar = window.confirm(
+      '¿Guardar cambios del estudiante? El cambio de grupo solo afectará sesiones futuras; las asistencias ya registradas mantendrán su grupo histórico.'
+    )
+
+    if (!confirmar) return
+
+    const { error } = await supabase
+      .from('estudiantes')
+      .update({
+        codigo,
+        nombre_completo: nombreCompleto,
+        grupo
+      })
+      .eq('id', estudiante.id)
+
+    if (error) {
+      setMensaje(`Error al actualizar estudiante: ${error.message}`)
+      return
+    }
+
+    setMensaje('Estudiante actualizado correctamente. Las asistencias anteriores no fueron modificadas.')
+    cancelarEdicion()
+    cargarEstudiantes()
+  }
+
   const eliminarEstudiante = async (id) => {
-    const confirmar = window.confirm('¿Eliminar este estudiante?')
+    const confirmar = window.confirm(
+      '¿Eliminar este estudiante de la lista actual? Esto no elimina asistencias ya registradas.'
+    )
+
     if (!confirmar) return
 
     const { error } = await supabase
@@ -237,7 +305,7 @@ function Estudiantes() {
       return
     }
 
-    setMensaje('Estudiante eliminado.')
+    setMensaje('Estudiante eliminado de la lista. Las asistencias previas no fueron modificadas.')
     cargarEstudiantes()
   }
 
@@ -248,7 +316,7 @@ function Estudiantes() {
     }
 
     const confirmar = window.confirm(
-      '¿Eliminar todos los estudiantes de esta asignatura?'
+      '¿Eliminar todos los estudiantes de esta asignatura? Esto no elimina asistencias ya registradas.'
     )
 
     if (!confirmar) return
@@ -263,7 +331,7 @@ function Estudiantes() {
       return
     }
 
-    setMensaje('Estudiantes eliminados de esta asignatura.')
+    setMensaje('Estudiantes eliminados de esta asignatura. Las asistencias previas no fueron modificadas.')
     cargarEstudiantes()
   }
 
@@ -280,6 +348,42 @@ function Estudiantes() {
 
   return (
     <div style={page}>
+      <style>
+        {`
+          @media (max-width: 768px) {
+            .est-grid {
+              grid-template-columns: 1fr !important;
+            }
+
+            .est-row {
+              grid-template-columns: 1fr !important;
+            }
+
+            .est-actions {
+              flex-direction: column !important;
+            }
+
+            .est-actions button {
+              width: 100% !important;
+            }
+
+            .est-table {
+              min-width: 760px !important;
+            }
+          }
+
+          input::placeholder {
+            color: #64748b;
+            opacity: 1;
+          }
+
+          input, select {
+            color: #0f172a;
+            background-color: white;
+          }
+        `}
+      </style>
+
       <h2 style={titulo}>Estudiantes por asignatura</h2>
 
       {mensaje && (
@@ -293,9 +397,7 @@ function Estudiantes() {
       )}
 
       <div style={card}>
-        <label style={label}>
-          Seleccione asignatura
-        </label>
+        <label style={label}>Seleccione asignatura</label>
 
         <select
           value={asignaturaId}
@@ -307,6 +409,7 @@ function Estudiantes() {
               nombre_completo: '',
               grupo: ''
             })
+            cancelarEdicion()
           }}
           style={input}
         >
@@ -320,96 +423,94 @@ function Estudiantes() {
         </select>
       </div>
 
-      <div style={card}>
-        <h3 style={{ marginTop: 0 }}>
-          Importar lista Excel
-        </h3>
+      <div className="est-grid" style={grid2}>
+        <div style={card}>
+          <h3 style={subtitulo}>Importar lista Excel</h3>
 
-        <input
-          type="file"
-          accept=".xlsx,.xls,.csv"
-          onChange={importarExcel}
-          style={input}
-        />
+          <input
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={importarExcel}
+            style={input}
+          />
 
-        <p style={ayuda}>
-          Formato requerido: columna A = código, columna B = apellidos y nombres, columna C = grupo.
-        </p>
-
-        {asignaturaSeleccionada && (
-          <p style={asignaturaBox}>
-            Asignatura seleccionada: {asignaturaSeleccionada.nombre}
+          <p style={ayuda}>
+            Formato requerido: columna A = código, columna B = apellidos y nombres, columna C = grupo.
           </p>
-        )}
-      </div>
 
-      <div style={card}>
-        <h3 style={{ marginTop: 0 }}>
-          Agregar estudiante manualmente
-        </h3>
-
-        <form onSubmit={guardarEstudianteManual} style={form}>
-          <input
-            style={input}
-            placeholder="Código del estudiante"
-            value={nuevoEstudiante.codigo}
-            onChange={(e) =>
-              setNuevoEstudiante({
-                ...nuevoEstudiante,
-                codigo: e.target.value
-              })
-            }
-          />
-
-          <input
-            style={input}
-            placeholder="Apellidos y nombres"
-            value={nuevoEstudiante.nombre_completo}
-            onChange={(e) =>
-              setNuevoEstudiante({
-                ...nuevoEstudiante,
-                nombre_completo: e.target.value
-              })
-            }
-          />
-
-          <input
-            style={input}
-            placeholder="Grupo. Ejemplo: A, B, C o Grupo A"
-            value={nuevoEstudiante.grupo}
-            onChange={(e) =>
-              setNuevoEstudiante({
-                ...nuevoEstudiante,
-                grupo: e.target.value
-              })
-            }
-          />
-
-          {gruposActuales.length > 0 && (
-            <div style={grupoSugerencias}>
-              <strong>Grupos existentes:</strong>{' '}
-              {gruposActuales.map(grupo => (
-                <button
-                  key={grupo}
-                  type="button"
-                  onClick={() =>
-                    setNuevoEstudiante({
-                      ...nuevoEstudiante,
-                      grupo
-                    })
-                  }
-                  style={chip}
-                >
-                  {grupo}
-                </button>
-              ))}
-            </div>
+          {asignaturaSeleccionada && (
+            <p style={asignaturaBox}>
+              Asignatura seleccionada: {asignaturaSeleccionada.nombre}
+            </p>
           )}
+        </div>
 
-          <button type="submit" style={botonAzul}>
-            Guardar estudiante
-          </button>
-        </form>
+        <div style={card}>
+          <h3 style={subtitulo}>Agregar estudiante manualmente</h3>
+
+          <form onSubmit={guardarEstudianteManual} style={form}>
+            <input
+              style={input}
+              placeholder="Código del estudiante"
+              value={nuevoEstudiante.codigo}
+              onChange={(e) =>
+                setNuevoEstudiante({
+                  ...nuevoEstudiante,
+                  codigo: e.target.value
+                })
+              }
+            />
+
+            <input
+              style={input}
+              placeholder="Apellidos y nombres"
+              value={nuevoEstudiante.nombre_completo}
+              onChange={(e) =>
+                setNuevoEstudiante({
+                  ...nuevoEstudiante,
+                  nombre_completo: e.target.value
+                })
+              }
+            />
+
+            <input
+              style={input}
+              placeholder="Grupo. Ejemplo: A, B, C o Grupo A"
+              value={nuevoEstudiante.grupo}
+              onChange={(e) =>
+                setNuevoEstudiante({
+                  ...nuevoEstudiante,
+                  grupo: e.target.value
+                })
+              }
+            />
+
+            {gruposActuales.length > 0 && (
+              <div style={grupoSugerencias}>
+                <strong>Grupos existentes:</strong>{' '}
+                {gruposActuales.map(grupo => (
+                  <button
+                    key={grupo}
+                    type="button"
+                    onClick={() =>
+                      setNuevoEstudiante({
+                        ...nuevoEstudiante,
+                        grupo
+                      })
+                    }
+                    style={chip}
+                  >
+                    {grupo}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button type="submit" style={botonAzul}>
+              Guardar estudiante
+            </button>
+          </form>
+        </div>
       </div>
 
       {asignaturaId && (
@@ -430,7 +531,7 @@ function Estudiantes() {
       ) : (
         estudiantes.length > 0 && (
           <div style={tableWrap}>
-            <table style={table}>
+            <table className="est-table" style={table}>
               <thead>
                 <tr>
                   <th style={th}>Código</th>
@@ -444,18 +545,111 @@ function Estudiantes() {
               <tbody>
                 {estudiantes.map(item => (
                   <tr key={item.id}>
-                    <td style={td}>{item.codigo}</td>
-                    <td style={td}>{item.nombre_completo}</td>
-                    <td style={td}>{item.grupo}</td>
-                    <td style={td}>{item.asignatura_nombre}</td>
-                    <td style={td}>
-                      <button
-                        onClick={() => eliminarEstudiante(item.id)}
-                        style={botonEliminar}
-                      >
-                        Eliminar
-                      </button>
-                    </td>
+                    {editando === item.id ? (
+                      <>
+                        <td style={td}>
+                          <input
+                            style={miniInput}
+                            value={formEditar.codigo}
+                            onChange={(e) =>
+                              setFormEditar({
+                                ...formEditar,
+                                codigo: e.target.value
+                              })
+                            }
+                          />
+                        </td>
+
+                        <td style={td}>
+                          <input
+                            style={miniInput}
+                            value={formEditar.nombre_completo}
+                            onChange={(e) =>
+                              setFormEditar({
+                                ...formEditar,
+                                nombre_completo: e.target.value
+                              })
+                            }
+                          />
+                        </td>
+
+                        <td style={td}>
+                          <input
+                            style={miniInput}
+                            value={formEditar.grupo}
+                            onChange={(e) =>
+                              setFormEditar({
+                                ...formEditar,
+                                grupo: e.target.value
+                              })
+                            }
+                          />
+
+                          <div style={{ marginTop: '6px' }}>
+                            {gruposActuales.map(grupo => (
+                              <button
+                                key={grupo}
+                                type="button"
+                                onClick={() =>
+                                  setFormEditar({
+                                    ...formEditar,
+                                    grupo
+                                  })
+                                }
+                                style={miniChip}
+                              >
+                                {grupo}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+
+                        <td style={td}>{item.asignatura_nombre}</td>
+
+                        <td style={td}>
+                          <div className="est-actions" style={acciones}>
+                            <button
+                              onClick={() => guardarEdicion(item)}
+                              style={botonGuardar}
+                            >
+                              Guardar
+                            </button>
+
+                            <button
+                              onClick={cancelarEdicion}
+                              style={botonCancelar}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={td}>{item.codigo}</td>
+                        <td style={td}>{item.nombre_completo}</td>
+                        <td style={td}>{item.grupo}</td>
+                        <td style={td}>{item.asignatura_nombre}</td>
+
+                        <td style={td}>
+                          <div className="est-actions" style={acciones}>
+                            <button
+                              onClick={() => iniciarEdicion(item)}
+                              style={botonEditar}
+                            >
+                              Editar
+                            </button>
+
+                            <button
+                              onClick={() => eliminarEstudiante(item.id)}
+                              style={botonEliminar}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -486,7 +680,8 @@ function Resumen({ titulo, valor, fondo }) {
 
 const page = {
   padding: '18px 12px 30px',
-  fontFamily: 'Arial'
+  fontFamily: 'Arial',
+  color: '#0f172a'
 }
 
 const titulo = {
@@ -511,6 +706,18 @@ const card = {
   boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
 }
 
+const grid2 = {
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: '14px'
+}
+
+const subtitulo = {
+  marginTop: 0,
+  textAlign: 'center',
+  color: '#334155'
+}
+
 const label = {
   display: 'block',
   fontWeight: 'bold',
@@ -520,11 +727,24 @@ const label = {
 
 const input = {
   width: '100%',
-  padding: '12px',
+  padding: '11px',
   borderRadius: '10px',
-  border: '1px solid #cbd5e1',
+  border: '1px solid #94a3b8',
   fontSize: '14px',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  color: '#0f172a',
+  background: '#ffffff'
+}
+
+const miniInput = {
+  width: '100%',
+  padding: '8px',
+  borderRadius: '8px',
+  border: '1px solid #94a3b8',
+  fontSize: '13px',
+  boxSizing: 'border-box',
+  color: '#0f172a',
+  background: '#ffffff'
 }
 
 const ayuda = {
@@ -565,6 +785,18 @@ const chip = {
   fontWeight: 'bold'
 }
 
+const miniChip = {
+  margin: '2px',
+  padding: '4px 7px',
+  borderRadius: '999px',
+  border: '1px solid #0284c7',
+  background: '#e0f2fe',
+  color: '#075985',
+  cursor: 'pointer',
+  fontSize: '11px',
+  fontWeight: 'bold'
+}
+
 const resumenGrid = {
   display: 'grid',
   gridTemplateColumns: 'repeat(2, 1fr)',
@@ -601,7 +833,7 @@ const tableWrap = {
 
 const table = {
   width: '100%',
-  minWidth: '620px',
+  minWidth: '840px',
   borderCollapse: 'collapse',
   fontSize: '13px'
 }
@@ -615,7 +847,24 @@ const th = {
 
 const td = {
   padding: '8px',
-  borderBottom: '1px solid #e2e8f0'
+  borderBottom: '1px solid #e2e8f0',
+  verticalAlign: 'top'
+}
+
+const acciones = {
+  display: 'flex',
+  gap: '6px',
+  flexWrap: 'wrap'
+}
+
+const botonEditar = {
+  background: '#f97316',
+  color: 'white',
+  border: 'none',
+  borderRadius: '8px',
+  padding: '7px 10px',
+  cursor: 'pointer',
+  fontWeight: 'bold'
 }
 
 const botonEliminar = {
@@ -624,7 +873,28 @@ const botonEliminar = {
   border: 'none',
   borderRadius: '8px',
   padding: '7px 10px',
-  cursor: 'pointer'
+  cursor: 'pointer',
+  fontWeight: 'bold'
+}
+
+const botonGuardar = {
+  background: '#16a34a',
+  color: 'white',
+  border: 'none',
+  borderRadius: '8px',
+  padding: '7px 10px',
+  cursor: 'pointer',
+  fontWeight: 'bold'
+}
+
+const botonCancelar = {
+  background: '#475569',
+  color: 'white',
+  border: 'none',
+  borderRadius: '8px',
+  padding: '7px 10px',
+  cursor: 'pointer',
+  fontWeight: 'bold'
 }
 
 export default Estudiantes
