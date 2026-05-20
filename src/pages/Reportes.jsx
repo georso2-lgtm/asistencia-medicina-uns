@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import * as XLSX from 'xlsx-js-style'
+import * as XLSX from 'xlsx'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../context/AuthContext'
 
