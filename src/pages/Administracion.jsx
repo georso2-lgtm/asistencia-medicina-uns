@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import { useAuth } from '../context/AuthContext'
 
 function Administracion() {
+  const { perfil } = useAuth()
+
   const [usuarios, setUsuarios] = useState([])
   const [docentes, setDocentes] = useState([])
   const [asignaturas, setAsignaturas] = useState([])
   const [asignaciones, setAsignaciones] = useState([])
-
   const [mensaje, setMensaje] = useState('')
   const [seccionAbierta, setSeccionAbierta] = useState('usuarios')
 
@@ -25,6 +27,12 @@ function Administracion() {
   const [cambioRol, setCambioRol] = useState({
     usuarioId: '',
     rol: ''
+  })
+
+  const [resetPassword, setResetPassword] = useState({
+    usuarioId: '',
+    nuevaPassword: '',
+    confirmarPassword: ''
   })
 
   const [docente, setDocente] = useState({
@@ -145,12 +153,7 @@ function Administracion() {
     if (existePorId) {
       const { error } = await supabase
         .from('usuarios')
-        .update({
-          email,
-          nombre,
-          rol,
-          estado: 'Activo'
-        })
+        .update({ email, nombre, rol, estado: 'Activo' })
         .eq('id', uid)
 
       if (error) {
@@ -162,15 +165,7 @@ function Administracion() {
     } else {
       const { error } = await supabase
         .from('usuarios')
-        .insert([
-          {
-            id: uid,
-            email,
-            nombre,
-            rol,
-            estado: 'Activo'
-          }
-        ])
+        .insert([{ id: uid, email, nombre, rol, estado: 'Activo' }])
 
       if (error) {
         setMensaje(`Error registrando usuario: ${error.message}`)
@@ -180,13 +175,7 @@ function Administracion() {
       setMensaje('Usuario registrado correctamente.')
     }
 
-    setNuevoUsuario({
-      uid: '',
-      email: '',
-      nombre: '',
-      rol: 'DOCENTE'
-    })
-
+    setNuevoUsuario({ uid: '', email: '', nombre: '', rol: 'DOCENTE' })
     await cargarUsuarios()
   }
 
@@ -201,9 +190,7 @@ function Administracion() {
 
     const { error } = await supabase
       .from('usuarios')
-      .update({
-        docente_id: Number(vinculoUsuario.docenteId)
-      })
+      .update({ docente_id: Number(vinculoUsuario.docenteId) })
       .eq('id', vinculoUsuario.usuarioId)
 
     if (error) {
@@ -225,17 +212,12 @@ function Administracion() {
       return
     }
 
-    const confirmar = window.confirm(
-      `¿Está seguro de cambiar el rol a ${cambioRol.rol}?`
-    )
-
+    const confirmar = window.confirm(`¿Está seguro de cambiar el rol a ${cambioRol.rol}?`)
     if (!confirmar) return
 
     const { error } = await supabase
       .from('usuarios')
-      .update({
-        rol: cambioRol.rol
-      })
+      .update({ rol: cambioRol.rol })
       .eq('id', cambioRol.usuarioId)
 
     if (error) {
@@ -246,6 +228,63 @@ function Administracion() {
     setMensaje('Rol actualizado correctamente.')
     setCambioRol({ usuarioId: '', rol: '' })
     await cargarUsuarios()
+  }
+
+  const restablecerPassword = async (e) => {
+    e.preventDefault()
+    setMensaje('')
+
+    if (!resetPassword.usuarioId) {
+      setMensaje('Seleccione usuario.')
+      return
+    }
+
+    if (!resetPassword.nuevaPassword || resetPassword.nuevaPassword.length < 8) {
+      setMensaje('La contraseña temporal debe tener al menos 8 caracteres.')
+      return
+    }
+
+    if (resetPassword.nuevaPassword !== resetPassword.confirmarPassword) {
+      setMensaje('Las contraseñas no coinciden.')
+      return
+    }
+
+    const usuario = usuarios.find(item => item.id === resetPassword.usuarioId)
+
+    const confirmar = window.confirm(
+      `¿Restablecer contraseña de ${usuario?.nombre || 'usuario seleccionado'}?`
+    )
+
+    if (!confirmar) return
+
+    setMensaje('Procesando restablecimiento de contraseña...')
+
+    const { data, error } = await supabase.functions.invoke(
+      'reset-password-admin',
+      {
+        body: {
+          userId: resetPassword.usuarioId,
+          nuevaPassword: resetPassword.nuevaPassword
+        }
+      }
+    )
+
+    if (error) {
+      setMensaje(`Error al restablecer contraseña: ${error.message}`)
+      return
+    }
+
+    if (data?.error) {
+      setMensaje(`Error al restablecer contraseña: ${data.error}`)
+      return
+    }
+
+    setMensaje('Contraseña restablecida correctamente.')
+    setResetPassword({
+      usuarioId: '',
+      nuevaPassword: '',
+      confirmarPassword: ''
+    })
   }
 
   const guardarDocente = async (e) => {
@@ -259,13 +298,11 @@ function Administracion() {
 
     const { error } = await supabase
       .from('docentes')
-      .insert([
-        {
-          nombre: docente.nombre.trim().toUpperCase(),
-          correo: docente.correo.trim().toLowerCase(),
-          estado: 'Activo'
-        }
-      ])
+      .insert([{
+        nombre: docente.nombre.trim().toUpperCase(),
+        correo: docente.correo.trim().toLowerCase(),
+        estado: 'Activo'
+      }])
 
     if (error) {
       setMensaje(`Error al guardar docente: ${error.message}`)
@@ -284,10 +321,7 @@ function Administracion() {
 
     if (!confirmar) return
 
-    await supabase
-      .from('docente_asignatura')
-      .delete()
-      .eq('docente_id', id)
+    await supabase.from('docente_asignatura').delete().eq('docente_id', id)
 
     const { error } = await supabase
       .from('docentes')
@@ -315,12 +349,10 @@ function Administracion() {
 
     const { error } = await supabase
       .from('docente_asignatura')
-      .insert([
-        {
-          docente_id: Number(asignacion.docenteId),
-          asignatura_id: Number(asignacion.asignaturaId)
-        }
-      ])
+      .insert([{
+        docente_id: Number(asignacion.docenteId),
+        asignatura_id: Number(asignacion.asignaturaId)
+      }])
 
     if (error) {
       setMensaje(
@@ -359,59 +391,32 @@ function Administracion() {
     mensaje.includes('Seleccione') ||
     mensaje.includes('Ingrese') ||
     mensaje.includes('Complete') ||
+    mensaje.includes('no coinciden') ||
+    mensaje.includes('debe tener') ||
     mensaje.includes('ya está')
+
+  const puedeRestablecer =
+    perfil?.rol === 'ADMINISTRADOR' ||
+    perfil?.rol === 'COORDINADOR'
 
   return (
     <div style={page}>
       <style>
         {`
           @media (max-width: 768px) {
-            .admin-summary {
-              grid-template-columns: 1fr 1fr !important;
-            }
-
-            .admin-grid {
-              grid-template-columns: 1fr !important;
-            }
-
-            .admin-row-card {
-              flex-direction: column !important;
-              align-items: stretch !important;
-            }
-
-            .admin-action-button {
-              width: 100% !important;
-            }
-
-            .admin-title {
-              font-size: 22px !important;
-            }
+            .admin-summary { grid-template-columns: 1fr 1fr !important; }
+            .admin-grid { grid-template-columns: 1fr !important; }
+            .admin-row-card { flex-direction: column !important; align-items: stretch !important; }
+            .admin-action-button { width: 100% !important; }
           }
 
-          input::placeholder {
-            color: #64748b;
-            opacity: 1;
-          }
-
-          select {
-            color: #0f172a;
-            background-color: #ffffff;
-          }
-
-          input {
-            color: #0f172a;
-            background-color: #ffffff;
-          }
+          input::placeholder { color: #64748b; opacity: 1; }
+          select, input { color: #0f172a; background-color: #ffffff; }
         `}
       </style>
 
-      <h2 className="admin-title" style={title}>
-        Administración del sistema
-      </h2>
-
-      <p style={subtitle}>
-        Gestión de usuarios, docentes y asignación académica.
-      </p>
+      <h2 style={title}>Administración del sistema</h2>
+      <p style={subtitle}>Gestión de usuarios, docentes y asignación académica.</p>
 
       <div className="admin-summary" style={summaryGrid}>
         <MiniCard titulo="Usuarios" valor={usuarios.length} color="#e0f2fe" />
@@ -430,67 +435,24 @@ function Administracion() {
         </div>
       )}
 
-      <Seccion
-        id="usuarios"
-        abierta={seccionAbierta}
-        setAbierta={setSeccionAbierta}
-        titulo="Usuarios, roles y vinculación docente"
-        icono="👤"
-      >
+      <Seccion id="usuarios" abierta={seccionAbierta} setAbierta={setSeccionAbierta} titulo="Usuarios, roles y vinculación docente" icono="👤">
         <div className="admin-grid" style={formGrid}>
           <div style={box}>
             <h3 style={boxTitle}>Registrar usuario de acceso</h3>
-
-            <p style={helpText}>
-              Cree primero el usuario en Supabase Authentication y copie su User UID.
-            </p>
+            <p style={helpText}>Cree primero el usuario en Supabase Authentication y copie su User UID.</p>
 
             <div style={form}>
-              <input
-                style={input}
-                placeholder="User UID de Supabase Auth"
-                value={nuevoUsuario.uid}
-                onChange={(e) =>
-                  setNuevoUsuario({ ...nuevoUsuario, uid: e.target.value })
-                }
-              />
+              <input style={input} placeholder="User UID de Supabase Auth" value={nuevoUsuario.uid} onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, uid: e.target.value })} />
+              <input style={input} type="email" placeholder="Correo de acceso" value={nuevoUsuario.email} onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, email: e.target.value })} />
+              <input style={input} placeholder="Nombre completo del usuario" value={nuevoUsuario.nombre} onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, nombre: e.target.value })} />
 
-              <input
-                style={input}
-                type="email"
-                placeholder="Correo de acceso"
-                value={nuevoUsuario.email}
-                onChange={(e) =>
-                  setNuevoUsuario({ ...nuevoUsuario, email: e.target.value })
-                }
-              />
-
-              <input
-                style={input}
-                placeholder="Nombre completo del usuario"
-                value={nuevoUsuario.nombre}
-                onChange={(e) =>
-                  setNuevoUsuario({ ...nuevoUsuario, nombre: e.target.value })
-                }
-              />
-
-              <select
-                style={input}
-                value={nuevoUsuario.rol}
-                onChange={(e) =>
-                  setNuevoUsuario({ ...nuevoUsuario, rol: e.target.value })
-                }
-              >
+              <select style={input} value={nuevoUsuario.rol} onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, rol: e.target.value })}>
                 <option value="DOCENTE">DOCENTE</option>
                 <option value="COORDINADOR">COORDINADOR</option>
                 <option value="ADMINISTRADOR">ADMINISTRADOR</option>
               </select>
 
-              <button
-                type="button"
-                onClick={guardarUsuarioAcceso}
-                style={primaryButton}
-              >
+              <button type="button" onClick={guardarUsuarioAcceso} style={primaryButton}>
                 Registrar usuario de acceso
               </button>
             </div>
@@ -500,39 +462,21 @@ function Administracion() {
             <h3 style={boxTitle}>Vincular usuario con docente</h3>
 
             <form onSubmit={guardarVinculoUsuario} style={form}>
-              <select
-                value={vinculoUsuario.usuarioId}
-                onChange={(e) =>
-                  setVinculoUsuario({ ...vinculoUsuario, usuarioId: e.target.value })
-                }
-                style={input}
-              >
+              <select value={vinculoUsuario.usuarioId} onChange={(e) => setVinculoUsuario({ ...vinculoUsuario, usuarioId: e.target.value })} style={input}>
                 <option value="">Seleccione usuario de acceso</option>
                 {usuarios.map(item => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre} | {item.rol} | {item.email}
-                  </option>
+                  <option key={item.id} value={item.id}>{item.nombre} | {item.rol} | {item.email}</option>
                 ))}
               </select>
 
-              <select
-                value={vinculoUsuario.docenteId}
-                onChange={(e) =>
-                  setVinculoUsuario({ ...vinculoUsuario, docenteId: e.target.value })
-                }
-                style={input}
-              >
+              <select value={vinculoUsuario.docenteId} onChange={(e) => setVinculoUsuario({ ...vinculoUsuario, docenteId: e.target.value })} style={input}>
                 <option value="">Seleccione docente institucional</option>
                 {docentes.map(item => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre}
-                  </option>
+                  <option key={item.id} value={item.id}>{item.nombre}</option>
                 ))}
               </select>
 
-              <button type="submit" style={primaryButton}>
-                Vincular usuario
-              </button>
+              <button type="submit" style={primaryButton}>Vincular usuario</button>
             </form>
           </div>
 
@@ -540,44 +484,49 @@ function Administracion() {
             <h3 style={boxTitle}>Cambiar rol</h3>
 
             <form onSubmit={guardarCambioRol} style={form}>
-              <select
-                value={cambioRol.usuarioId}
-                onChange={(e) =>
-                  setCambioRol({ ...cambioRol, usuarioId: e.target.value })
-                }
-                style={input}
-              >
+              <select value={cambioRol.usuarioId} onChange={(e) => setCambioRol({ ...cambioRol, usuarioId: e.target.value })} style={input}>
                 <option value="">Seleccione usuario</option>
                 {usuarios.map(item => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre} | Rol actual: {item.rol}
-                  </option>
+                  <option key={item.id} value={item.id}>{item.nombre} | Rol actual: {item.rol}</option>
                 ))}
               </select>
 
-              <select
-                value={cambioRol.rol}
-                onChange={(e) =>
-                  setCambioRol({ ...cambioRol, rol: e.target.value })
-                }
-                style={input}
-              >
+              <select value={cambioRol.rol} onChange={(e) => setCambioRol({ ...cambioRol, rol: e.target.value })} style={input}>
                 <option value="">Seleccione nuevo rol</option>
                 <option value="ADMINISTRADOR">ADMINISTRADOR</option>
                 <option value="COORDINADOR">COORDINADOR</option>
                 <option value="DOCENTE">DOCENTE</option>
               </select>
 
-              <button type="submit" style={warningButton}>
-                Actualizar rol
-              </button>
+              <button type="submit" style={warningButton}>Actualizar rol</button>
             </form>
           </div>
+
+          {puedeRestablecer && (
+            <div style={box}>
+              <h3 style={boxTitle}>Restablecer contraseña</h3>
+
+              <form onSubmit={restablecerPassword} style={form}>
+                <select value={resetPassword.usuarioId} onChange={(e) => setResetPassword({ ...resetPassword, usuarioId: e.target.value })} style={input}>
+                  <option value="">Seleccione usuario</option>
+                  {usuarios.map(item => (
+                    <option key={item.id} value={item.id}>{item.nombre} | {item.email} | {item.rol}</option>
+                  ))}
+                </select>
+
+                <input type="password" style={input} placeholder="Nueva contraseña temporal" value={resetPassword.nuevaPassword} onChange={(e) => setResetPassword({ ...resetPassword, nuevaPassword: e.target.value })} />
+                <input type="password" style={input} placeholder="Confirmar contraseña temporal" value={resetPassword.confirmarPassword} onChange={(e) => setResetPassword({ ...resetPassword, confirmarPassword: e.target.value })} />
+
+                <button type="submit" style={dangerButton}>
+                  Restablecer contraseña
+                </button>
+              </form>
+            </div>
+          )}
         </div>
 
         <div style={selectPanel}>
           <label style={label}>Usuarios registrados</label>
-
           <select style={input}>
             <option>Seleccione para revisar usuarios...</option>
             {usuarios.map(item => (
@@ -589,39 +538,14 @@ function Administracion() {
         </div>
       </Seccion>
 
-      <Seccion
-        id="docentes"
-        abierta={seccionAbierta}
-        setAbierta={setSeccionAbierta}
-        titulo="Docentes institucionales"
-        icono="🧑‍🏫"
-      >
+      <Seccion id="docentes" abierta={seccionAbierta} setAbierta={setSeccionAbierta} titulo="Docentes institucionales" icono="🧑‍🏫">
         <div style={box}>
           <h3 style={boxTitle}>Agregar docente institucional</h3>
 
           <form onSubmit={guardarDocente} style={form}>
-            <input
-              style={input}
-              placeholder="Nombre completo del docente"
-              value={docente.nombre}
-              onChange={(e) =>
-                setDocente({ ...docente, nombre: e.target.value })
-              }
-            />
-
-            <input
-              style={input}
-              type="email"
-              placeholder="Correo institucional o personal"
-              value={docente.correo}
-              onChange={(e) =>
-                setDocente({ ...docente, correo: e.target.value })
-              }
-            />
-
-            <button type="submit" style={primaryButton}>
-              Guardar docente
-            </button>
+            <input style={input} placeholder="Nombre completo del docente" value={docente.nombre} onChange={(e) => setDocente({ ...docente, nombre: e.target.value })} />
+            <input style={input} type="email" placeholder="Correo institucional o personal" value={docente.correo} onChange={(e) => setDocente({ ...docente, correo: e.target.value })} />
+            <button type="submit" style={primaryButton}>Guardar docente</button>
           </form>
         </div>
 
@@ -633,12 +557,7 @@ function Administracion() {
                 <p style={smallText}>{item.correo || 'Sin correo registrado'}</p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => eliminarDocente(item.id)}
-                className="admin-action-button"
-                style={smallDanger}
-              >
+              <button type="button" onClick={() => eliminarDocente(item.id)} className="admin-action-button" style={smallDanger}>
                 Eliminar
               </button>
             </div>
@@ -646,50 +565,26 @@ function Administracion() {
         </div>
       </Seccion>
 
-      <Seccion
-        id="asignaciones"
-        abierta={seccionAbierta}
-        setAbierta={setSeccionAbierta}
-        titulo="Asignación docente - asignatura"
-        icono="📚"
-      >
+      <Seccion id="asignaciones" abierta={seccionAbierta} setAbierta={setSeccionAbierta} titulo="Asignación docente - asignatura" icono="📚">
         <div style={box}>
           <h3 style={boxTitle}>Asignar docente a asignatura</h3>
 
           <form onSubmit={guardarAsignacion} style={form}>
-            <select
-              value={asignacion.docenteId}
-              onChange={(e) =>
-                setAsignacion({ ...asignacion, docenteId: e.target.value })
-              }
-              style={input}
-            >
+            <select value={asignacion.docenteId} onChange={(e) => setAsignacion({ ...asignacion, docenteId: e.target.value })} style={input}>
               <option value="">Seleccione docente</option>
               {docentes.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.nombre}
-                </option>
+                <option key={item.id} value={item.id}>{item.nombre}</option>
               ))}
             </select>
 
-            <select
-              value={asignacion.asignaturaId}
-              onChange={(e) =>
-                setAsignacion({ ...asignacion, asignaturaId: e.target.value })
-              }
-              style={input}
-            >
+            <select value={asignacion.asignaturaId} onChange={(e) => setAsignacion({ ...asignacion, asignaturaId: e.target.value })} style={input}>
               <option value="">Seleccione asignatura</option>
               {asignaturas.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.nombre} {item.ciclo ? `- ${item.ciclo}` : ''}
-                </option>
+                <option key={item.id} value={item.id}>{item.nombre} {item.ciclo ? `- ${item.ciclo}` : ''}</option>
               ))}
             </select>
 
-            <button type="submit" style={primaryButton}>
-              Asignar docente
-            </button>
+            <button type="submit" style={primaryButton}>Asignar docente</button>
           </form>
         </div>
 
@@ -704,12 +599,7 @@ function Administracion() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => eliminarAsignacion(item.id)}
-                className="admin-action-button"
-                style={smallDanger}
-              >
+              <button type="button" onClick={() => eliminarAsignacion(item.id)} className="admin-action-button" style={smallDanger}>
                 Eliminar
               </button>
             </div>
@@ -725,30 +615,19 @@ function Seccion({ id, abierta, setAbierta, titulo, icono, children }) {
 
   return (
     <section style={section}>
-      <button
-        type="button"
-        onClick={() => setAbierta(visible ? '' : id)}
-        style={sectionHeader}
-      >
+      <button type="button" onClick={() => setAbierta(visible ? '' : id)} style={sectionHeader}>
         <span>{icono} {titulo}</span>
         <strong>{visible ? '▲' : '▼'}</strong>
       </button>
 
-      {visible && (
-        <div style={sectionBody}>
-          {children}
-        </div>
-      )}
+      {visible && <div style={sectionBody}>{children}</div>}
     </section>
   )
 }
 
 function MiniCard({ titulo, valor, color }) {
   return (
-    <div style={{
-      ...miniCard,
-      background: color
-    }}>
+    <div style={{ ...miniCard, background: color }}>
       <strong>{titulo}</strong>
       <p>{valor}</p>
     </div>
@@ -790,7 +669,7 @@ const miniCard = {
   padding: '14px 8px',
   textAlign: 'center',
   border: '1px solid #cbd5e1',
-  boxShadow: '0 3px 8px rgba(0,0,0,0.05)'
+  boxShadow: '0 3px 8px rgba(15,23,42,0.08)'
 }
 
 const alert = {
@@ -815,7 +694,7 @@ const sectionHeader = {
   width: '100%',
   padding: '15px',
   border: 'none',
-  background: '#031a50',
+  background: '#0f172a',
   color: 'white',
   display: 'flex',
   justifyContent: 'space-between',
@@ -873,7 +752,7 @@ const input = {
   boxSizing: 'border-box',
   background: '#ffffff',
   color: '#0f172a',
-  outlineColor: '#0251c7'
+  outlineColor: '#0284c7'
 }
 
 const label = {
@@ -891,7 +770,7 @@ const selectPanel = {
 }
 
 const primaryButton = {
-  background: '#2d53b9',
+  background: '#0284c7',
   color: 'white',
   border: 'none',
   padding: '12px',
@@ -902,7 +781,18 @@ const primaryButton = {
 }
 
 const warningButton = {
-  background: '#ad0c0c',
+  background: '#f97316',
+  color: 'white',
+  border: 'none',
+  padding: '12px',
+  borderRadius: '12px',
+  fontWeight: 'bold',
+  cursor: 'pointer',
+  fontSize: '14px'
+}
+
+const dangerButton = {
+  background: '#7f1d1d',
   color: 'white',
   border: 'none',
   padding: '12px',
