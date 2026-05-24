@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../context/AuthContext'
@@ -9,16 +9,15 @@ function Reportes() {
   const [sesiones, setSesiones] = useState([])
   const [asistencias, setAsistencias] = useState([])
   const [estudiantes, setEstudiantes] = useState([])
-  const [asignaturas, setAsignaturas] = useState([])
+  const [mensaje, setMensaje] = useState('')
+  const [cargando, setCargando] = useState(false)
 
   const [filtros, setFiltros] = useState({
     asignaturaId: '',
+    unidad: '',
     grupo: '',
-    docenteId: ''
+    estadoSesion: ''
   })
-
-  const [mensaje, setMensaje] = useState('')
-  const [cargando, setCargando] = useState(false)
 
   useEffect(() => {
     if (perfil) {
@@ -33,8 +32,8 @@ function Reportes() {
     let querySesiones = supabase
       .from('sesiones')
       .select('*')
-      .order('fecha', { ascending: false })
-      .order('id', { ascending: false })
+      .order('fecha', { ascending: true })
+      .order('hora_inicio', { ascending: true })
 
     if (perfil?.rol === 'DOCENTE') {
       querySesiones = querySesiones.eq('docente_id', perfil.docente_id)
@@ -48,10 +47,10 @@ function Reportes() {
       return
     }
 
-    const sesionesPermitidas = sesionesData || []
-    const idsSesiones = sesionesPermitidas.map(s => s.id)
+    const sesionesLista = sesionesData || []
+    const idsSesiones = sesionesLista.map(s => s.id)
 
-    let asistenciasData = []
+    let asistenciasLista = []
 
     if (idsSesiones.length > 0) {
       const { data, error } = await supabase
@@ -65,28 +64,28 @@ function Reportes() {
         return
       }
 
-      asistenciasData = data || []
+      asistenciasLista = data || []
     }
 
     const asignaturaIds = [
       ...new Set(
-        sesionesPermitidas
+        sesionesLista
           .map(s => s.asignatura_id)
           .filter(Boolean)
       )
     ]
 
-    let estudiantesQuery = supabase
+    let queryEstudiantes = supabase
       .from('estudiantes')
       .select('*')
       .order('grupo', { ascending: true })
       .order('nombre_completo', { ascending: true })
 
     if (asignaturaIds.length > 0) {
-      estudiantesQuery = estudiantesQuery.in('asignatura_id', asignaturaIds)
+      queryEstudiantes = queryEstudiantes.in('asignatura_id', asignaturaIds)
     }
 
-    const { data: estudiantesData, error: errorEstudiantes } = await estudiantesQuery
+    const { data: estudiantesData, error: errorEstudiantes } = await queryEstudiantes
 
     if (errorEstudiantes) {
       setMensaje(`Error al cargar estudiantes: ${errorEstudiantes.message}`)
@@ -94,25 +93,14 @@ function Reportes() {
       return
     }
 
-    const asignaturasUnicas = []
-    const mapaAsignaturas = new Map()
-
-    sesionesPermitidas.forEach(s => {
-      if (s.asignatura_id && !mapaAsignaturas.has(s.asignatura_id)) {
-        mapaAsignaturas.set(s.asignatura_id, true)
-
-        asignaturasUnicas.push({
-          id: s.asignatura_id,
-          nombre: s.asignatura_nombre || 'Sin nombre'
-        })
-      }
-    })
-
-    setSesiones(sesionesPermitidas)
-    setAsistencias(asistenciasData)
+    setSesiones(sesionesLista)
+    setAsistencias(asistenciasLista)
     setEstudiantes(estudiantesData || [])
-    setAsignaturas(asignaturasUnicas)
     setCargando(false)
+  }
+
+  const obtenerUnidad = (sesion) => {
+    return sesion?.unidad || 'Sin unidad'
   }
 
   const obtenerTipoSesion = (sesion) => {
@@ -131,116 +119,165 @@ function Reportes() {
     texto = texto.replace('GRUPO', '').trim()
 
     const coincidencia = texto.match(/[A-Z]/)
-
     return coincidencia ? coincidencia[0] : texto
   }
 
-  const sesionesFiltradas = sesiones.filter(s => {
-    if (
-      filtros.asignaturaId &&
-      s.asignatura_id?.toString() !== filtros.asignaturaId
-    ) {
-      return false
-    }
+  const obtenerCodigoAsistencia = (a) => {
+    return a.codigo || a.codigo_estudiante || ''
+  }
 
-    if (
-      filtros.docenteId &&
-      s.docente_id?.toString() !== filtros.docenteId
-    ) {
-      return false
-    }
+  const obtenerNombreAsistencia = (a) => {
+    return a.estudiante || a.apellidos_nombres || ''
+  }
 
-    return true
-  })
+  const asignaturasDisponibles = useMemo(() => {
+    const mapa = new Map()
 
-  const idsSesionesFiltradas = sesionesFiltradas.map(s => s.id)
-
-  const asistenciasFiltradas = asistencias.filter(a =>
-    idsSesionesFiltradas.includes(a.sesion_id)
-  )
-
-  const estudiantesFiltrados = estudiantes.filter(e => {
-    if (
-      filtros.asignaturaId &&
-      e.asignatura_id?.toString() !== filtros.asignaturaId
-    ) {
-      return false
-    }
-
-    if (
-      filtros.grupo &&
-      normalizarGrupo(e.grupo) !== normalizarGrupo(filtros.grupo)
-    ) {
-      return false
-    }
-
-    return true
-  })
-
-  const gruposDisponibles = [
-    ...new Set(
-      estudiantes
-        .filter(e => {
-          if (
-            filtros.asignaturaId &&
-            e.asignatura_id?.toString() !== filtros.asignaturaId
-          ) {
-            return false
-          }
-
-          return true
+    sesiones.forEach(s => {
+      if (s.asignatura_id) {
+        mapa.set(s.asignatura_id, {
+          id: s.asignatura_id,
+          nombre: s.asignatura_nombre || 'Sin nombre'
         })
-        .map(e => e.grupo)
-        .filter(Boolean)
-    )
-  ].sort()
+      }
+    })
 
-  const docentesDisponibles = [
-    ...new Map(
-      sesiones
-        .filter(s => s.docente_id)
-        .map(s => [
-          s.docente_id,
-          {
-            id: s.docente_id,
-            nombre: s.docente || 'Sin docente'
-          }
-        ])
-    ).values()
-  ]
+    return Array.from(mapa.values())
+  }, [sesiones])
 
-  const calcularReporte = () => {
+  const gruposDisponibles = useMemo(() => {
+    return [
+      ...new Set(
+        estudiantes
+          .filter(e => {
+            if (
+              filtros.asignaturaId &&
+              e.asignatura_id?.toString() !== filtros.asignaturaId
+            ) {
+              return false
+            }
+
+            return true
+          })
+          .map(e => e.grupo)
+          .filter(Boolean)
+      )
+    ].sort()
+  }, [estudiantes, filtros.asignaturaId])
+
+  const sesionesFiltradas = useMemo(() => {
+    return sesiones.filter(s => {
+      if (
+        filtros.asignaturaId &&
+        s.asignatura_id?.toString() !== filtros.asignaturaId
+      ) {
+        return false
+      }
+
+      if (
+        filtros.unidad &&
+        obtenerUnidad(s) !== filtros.unidad
+      ) {
+        return false
+      }
+
+      if (
+        filtros.estadoSesion &&
+        s.estado !== filtros.estadoSesion
+      ) {
+        return false
+      }
+
+      return true
+    })
+  }, [sesiones, filtros])
+
+  const estudiantesFiltrados = useMemo(() => {
+    return estudiantes.filter(e => {
+      if (
+        filtros.asignaturaId &&
+        e.asignatura_id?.toString() !== filtros.asignaturaId
+      ) {
+        return false
+      }
+
+      if (
+        filtros.grupo &&
+        normalizarGrupo(e.grupo) !== normalizarGrupo(filtros.grupo)
+      ) {
+        return false
+      }
+
+      return true
+    })
+  }, [estudiantes, filtros])
+
+  const mapaAsistencias = useMemo(() => {
+    const mapa = new Map()
+
+    asistencias.forEach(a => {
+      const codigo = obtenerCodigoAsistencia(a)
+      const clave = `${a.sesion_id}_${codigo}`
+      mapa.set(clave, a)
+    })
+
+    return mapa
+  }, [asistencias])
+
+  const sesionesParaEstudiante = (estudiante) => {
+    return sesionesFiltradas.filter(s => {
+      if (s.asignatura_id !== estudiante.asignatura_id) return false
+
+      const tipo = obtenerTipoSesion(s)
+
+      if (tipo === 'TEORIA') return true
+
+      return normalizarGrupo(s.grupo) === normalizarGrupo(estudiante.grupo)
+    })
+  }
+
+  const abreviarEstado = (estado) => {
+    if (estado === 'Presente') return 'P'
+    if (estado === 'Tardanza') return 'T'
+    if (estado === 'Justificado') return 'J'
+    return 'F'
+  }
+
+  const obtenerEstadoEstudianteSesion = (estudiante, sesion) => {
+    const clave = `${sesion.id}_${estudiante.codigo}`
+    const registro = mapaAsistencias.get(clave)
+
+    if (!registro) return 'F'
+
+    return abreviarEstado(registro.estado)
+  }
+
+  const reporteMatriz = useMemo(() => {
     return estudiantesFiltrados.map(est => {
-      const sesionesDeEstudiante = sesionesFiltradas.filter(s => {
-        if (s.asignatura_id !== est.asignatura_id) return false
+      const sesionesValidas = sesionesParaEstudiante(est)
 
-        const tipoSesion = obtenerTipoSesion(s)
+      let totalP = 0
+      let totalT = 0
+      let totalF = 0
+      let totalJ = 0
 
-        if (tipoSesion === 'TEORIA') return true
+      const estados = {}
 
-        return normalizarGrupo(s.grupo) === normalizarGrupo(est.grupo)
+      sesionesValidas.forEach(sesion => {
+        const estado = obtenerEstadoEstudianteSesion(est, sesion)
+        estados[sesion.id] = estado
+
+        if (estado === 'P') totalP++
+        if (estado === 'T') totalT++
+        if (estado === 'F') totalF++
+        if (estado === 'J') totalJ++
       })
 
-      const registros = asistenciasFiltradas.filter(a =>
-        a.codigo === est.codigo &&
-        sesionesDeEstudiante.some(s => s.id === a.sesion_id)
-      )
-
-      const presentes = registros.filter(r => r.estado === 'Presente').length
-      const tardanzas = registros.filter(r => r.estado === 'Tardanza').length
-      const justificados = registros.filter(r => r.estado === 'Justificado').length
-      const faltasRegistradas = registros.filter(r => r.estado === 'Falta').length
-
-      const totalSesiones = sesionesDeEstudiante.length
-      const asistenciasValidas = presentes + tardanzas + justificados
-
-      const faltasCalculadas = Math.max(
-        totalSesiones - asistenciasValidas,
-        faltasRegistradas
-      )
+      const totalSesiones = sesionesValidas.length
+      const totalValidas = totalP + totalT + totalJ
 
       const porcentaje = totalSesiones > 0
-        ? ((asistenciasValidas / totalSesiones) * 100).toFixed(1)
+        ? ((totalValidas / totalSesiones) * 100).toFixed(1)
         : '0.0'
 
       return {
@@ -248,134 +285,183 @@ function Reportes() {
         estudiante: est.nombre_completo,
         grupo: est.grupo,
         asignatura: est.asignatura_nombre,
+        estados,
         totalSesiones,
-        presentes,
-        tardanzas,
-        justificados,
-        faltas: faltasCalculadas,
+        totalP,
+        totalT,
+        totalF,
+        totalJ,
         porcentaje
+      }
+    })
+  }, [estudiantesFiltrados, sesionesFiltradas, mapaAsistencias])
+
+  const construirEncabezadoSesion = (sesion, index) => {
+    const unidad = obtenerUnidad(sesion).replace('Unidad ', 'U')
+    const fecha = sesion.fecha || ''
+    const tema = sesion.tema || 'Sin tema'
+    const tipo = obtenerTipoSesion(sesion)
+
+    return `${index + 1}. ${unidad} | ${fecha} | ${tipo} | ${tema}`
+  }
+
+  const autoAjustarColumnas = (datos) => {
+    if (!datos || datos.length === 0) return []
+
+    const cantidadColumnas = Math.max(...datos.map(fila => fila.length))
+
+    return Array.from({ length: cantidadColumnas }).map((_, colIndex) => {
+      const max = datos.reduce((acc, fila) => {
+        const valor = fila[colIndex] ? fila[colIndex].toString() : ''
+        return Math.max(acc, valor.length)
+      }, 10)
+
+      return {
+        wch: Math.min(Math.max(max + 2, 10), 45)
       }
     })
   }
 
-  const reporte = calcularReporte()
-
   const descargarExcel = () => {
-    const datos = [
-      ['REPORTE DE ASISTENCIA - ESCUELA PROFESIONAL DE MEDICINA HUMANA'],
-      ['Universidad Nacional del Santa'],
-      [''],
+    if (sesionesFiltradas.length === 0) {
+      setMensaje('No hay sesiones para generar reporte.')
+      return
+    }
+
+    if (reporteMatriz.length === 0) {
+      setMensaje('No hay estudiantes para generar reporte.')
+      return
+    }
+
+    const sesionesOrdenadas = [...sesionesFiltradas].sort((a, b) => {
+      const fa = `${a.fecha || ''} ${a.hora_inicio || ''}`
+      const fb = `${b.fecha || ''} ${b.hora_inicio || ''}`
+      return fa.localeCompare(fb)
+    })
+
+    const encabezadoMatriz = [
+      'Código',
+      'Estudiante',
+      'Grupo',
+      'Asignatura',
+      ...sesionesOrdenadas.map((s, i) => construirEncabezadoSesion(s, i)),
+      'Total sesiones',
+      'P',
+      'T',
+      'J',
+      'F',
+      '% asistencia'
+    ]
+
+    const datosMatriz = [
+      ['REPORTE DETALLADO DE ASISTENCIA - MEDICINA HUMANA UNS'],
       [`Fecha de emisión: ${new Date().toLocaleString()}`],
-      [`Usuario: ${perfil?.nombre || ''}`],
-      [`Rol: ${perfil?.rol || ''}`],
-      [`Total sesiones consideradas: ${sesionesFiltradas.length}`],
-      [''],
+      [`Usuario: ${perfil?.nombre || ''} | Rol: ${perfil?.rol || ''}`],
+      ['Leyenda: P = Presente | T = Tardanza | J = Justificado | F = Falta'],
+      [],
+      encabezadoMatriz,
+      ...reporteMatriz.map(item => [
+        item.codigo,
+        item.estudiante,
+        item.grupo,
+        item.asignatura,
+        ...sesionesOrdenadas.map(s => item.estados[s.id] || 'F'),
+        item.totalSesiones,
+        item.totalP,
+        item.totalT,
+        item.totalJ,
+        item.totalF,
+        `${item.porcentaje}%`
+      ])
+    ]
+
+    const resumen = [
+      ['RESUMEN DE ASISTENCIA - MEDICINA HUMANA UNS'],
+      [`Fecha de emisión: ${new Date().toLocaleString()}`],
+      [`Sesiones consideradas: ${sesionesOrdenadas.length}`],
+      [`Estudiantes considerados: ${reporteMatriz.length}`],
+      [],
       [
         'Código',
         'Estudiante',
         'Grupo',
         'Asignatura',
-        'Sesiones',
+        'Total sesiones',
         'Presentes',
         'Tardanzas',
         'Justificados',
         'Faltas',
-        '% Asistencia'
+        '% asistencia'
       ],
-      ...reporte.map(item => [
+      ...reporteMatriz.map(item => [
         item.codigo,
         item.estudiante,
         item.grupo,
         item.asignatura,
         item.totalSesiones,
-        item.presentes,
-        item.tardanzas,
-        item.justificados,
-        item.faltas,
+        item.totalP,
+        item.totalT,
+        item.totalJ,
+        item.totalF,
         `${item.porcentaje}%`
       ])
     ]
 
-    const hoja = XLSX.utils.aoa_to_sheet(datos)
-
-    hoja['!cols'] = [
-      { wch: 16 },
-      { wch: 42 },
-      { wch: 14 },
-      { wch: 36 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 14 },
-      { wch: 10 },
-      { wch: 16 }
-    ]
-
-    hoja['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } }
-    ]
-
-    const estiloTitulo = {
-      font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } },
-      fill: { fgColor: { rgb: '0F172A' } },
-      alignment: { horizontal: 'center', vertical: 'center' }
-    }
-
-    const estiloSubtitulo = {
-      font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } },
-      fill: { fgColor: { rgb: '0369A1' } },
-      alignment: { horizontal: 'center', vertical: 'center' }
-    }
-
-    const estiloEncabezado = {
-      font: { bold: true, color: { rgb: 'FFFFFF' } },
-      fill: { fgColor: { rgb: '0284C7' } },
-      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-      border: borde
-    }
-
-    const estiloCelda = {
-      alignment: { vertical: 'center', wrapText: true },
-      border: borde
-    }
-
-    const estiloCentro = {
-      alignment: { horizontal: 'center', vertical: 'center' },
-      border: borde
-    }
-
-    hoja['A1'].s = estiloTitulo
-    hoja['A2'].s = estiloSubtitulo
-
-    aplicarEstilo(hoja, 8, 8, 0, 9, estiloEncabezado)
-    aplicarEstilo(hoja, 9, datos.length - 1, 0, 9, estiloCelda)
-    aplicarEstilo(hoja, 9, datos.length - 1, 2, 9, estiloCentro)
-
-    hoja['!rows'] = [
-      { hpt: 28 },
-      { hpt: 24 },
-      { hpt: 8 },
-      { hpt: 22 },
-      { hpt: 22 },
-      { hpt: 22 },
-      { hpt: 22 },
-      { hpt: 8 },
-      { hpt: 32 }
+    const detalleSesiones = [
+      ['DETALLE DE SESIONES CONSIDERADAS'],
+      [],
+      [
+        'N°',
+        'Unidad',
+        'Fecha',
+        'Hora inicio',
+        'Hora fin',
+        'Asignatura',
+        'Tipo',
+        'Grupo',
+        'Tema',
+        'Estado'
+      ],
+      ...sesionesOrdenadas.map((s, index) => [
+        index + 1,
+        obtenerUnidad(s),
+        s.fecha || '',
+        s.hora_inicio || '',
+        s.hora_fin || s.hora_cierre || '',
+        s.asignatura_nombre || '',
+        obtenerTipoSesion(s),
+        s.grupo || '',
+        s.tema || '',
+        s.estado || ''
+      ])
     ]
 
     const libro = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(libro, hoja, 'Reporte asistencia')
 
-    XLSX.writeFile(libro, 'reporte_asistencia_medicina_uns.xlsx')
+    const hojaMatriz = XLSX.utils.aoa_to_sheet(datosMatriz)
+    hojaMatriz['!cols'] = autoAjustarColumnas(datosMatriz)
+    hojaMatriz['!freeze'] = { xSplit: 4, ySplit: 6 }
+
+    const hojaResumen = XLSX.utils.aoa_to_sheet(resumen)
+    hojaResumen['!cols'] = autoAjustarColumnas(resumen)
+
+    const hojaSesiones = XLSX.utils.aoa_to_sheet(detalleSesiones)
+    hojaSesiones['!cols'] = autoAjustarColumnas(detalleSesiones)
+
+    XLSX.utils.book_append_sheet(libro, hojaResumen, 'Resumen')
+    XLSX.utils.book_append_sheet(libro, hojaMatriz, 'Detalle por sesión')
+    XLSX.utils.book_append_sheet(libro, hojaSesiones, 'Sesiones')
+
+    XLSX.writeFile(libro, 'reporte_asistencia_detallado_uns.xlsx')
   }
 
   const esError =
-    mensaje.includes('Error')
+    mensaje.includes('Error') ||
+    mensaje.includes('No hay')
 
   return (
     <div style={page}>
-      <h2>
+      <h2 style={titulo}>
         Reportes de asistencia
       </h2>
 
@@ -390,81 +476,85 @@ function Reportes() {
       )}
 
       <div style={card}>
-        <h3 style={{ marginTop: 0 }}>
-          Filtros
+        <h3 style={subtitulo}>
+          Filtros del reporte
         </h3>
 
-        <select
-          value={filtros.asignaturaId}
-          onChange={(e) =>
-            setFiltros({
-              ...filtros,
-              asignaturaId: e.target.value,
-              grupo: ''
-            })
-          }
-          style={input}
-        >
-          <option value="">
-            Todas las asignaturas
-          </option>
-
-          {asignaturas.map(item => (
-            <option key={item.id} value={item.id}>
-              {item.nombre}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filtros.grupo}
-          onChange={(e) =>
-            setFiltros({
-              ...filtros,
-              grupo: e.target.value
-            })
-          }
-          style={input}
-        >
-          <option value="">
-            Todos los grupos
-          </option>
-
-          {gruposDisponibles.map(grupo => (
-            <option key={grupo} value={grupo}>
-              Grupo {grupo}
-            </option>
-          ))}
-        </select>
-
-        {(perfil?.rol === 'COORDINADOR' || perfil?.rol === 'ADMINISTRADOR') && (
+        <div style={gridFiltros}>
           <select
-            value={filtros.docenteId}
+            style={input}
+            value={filtros.asignaturaId}
             onChange={(e) =>
               setFiltros({
                 ...filtros,
-                docenteId: e.target.value
+                asignaturaId: e.target.value,
+                grupo: ''
               })
             }
-            style={input}
           >
-            <option value="">
-              Todos los docentes
-            </option>
-
-            {docentesDisponibles.map(doc => (
-              <option key={doc.id} value={doc.id}>
-                {doc.nombre}
+            <option value="">Todas las asignaturas</option>
+            {asignaturasDisponibles.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.nombre}
               </option>
             ))}
           </select>
-        )}
+
+          <select
+            style={input}
+            value={filtros.unidad}
+            onChange={(e) =>
+              setFiltros({
+                ...filtros,
+                unidad: e.target.value
+              })
+            }
+          >
+            <option value="">Todas las unidades</option>
+            <option value="Unidad I">Unidad I</option>
+            <option value="Unidad II">Unidad II</option>
+            <option value="Unidad III">Unidad III</option>
+          </select>
+
+          <select
+            style={input}
+            value={filtros.grupo}
+            onChange={(e) =>
+              setFiltros({
+                ...filtros,
+                grupo: e.target.value
+              })
+            }
+          >
+            <option value="">Todos los grupos</option>
+            {gruposDisponibles.map(grupo => (
+              <option key={grupo} value={grupo}>
+                Grupo {grupo}
+              </option>
+            ))}
+          </select>
+
+          <select
+            style={input}
+            value={filtros.estadoSesion}
+            onChange={(e) =>
+              setFiltros({
+                ...filtros,
+                estadoSesion: e.target.value
+              })
+            }
+          >
+            <option value="">Todas las sesiones</option>
+            <option value="Abierta">Abiertas</option>
+            <option value="Cerrada">Cerradas</option>
+          </select>
+        </div>
       </div>
 
-      <div style={statsFila}>
+      <div style={statsGrid}>
         <Resumen titulo="Sesiones" valor={sesionesFiltradas.length} fondo="#e0f2fe" />
-        <Resumen titulo="Estudiantes" valor={reporte.length} fondo="#dcfce7" />
-        <Resumen titulo="Registros" valor={asistenciasFiltradas.length} fondo="#fef9c3" />
+        <Resumen titulo="Estudiantes" valor={reporteMatriz.length} fondo="#dcfce7" />
+        <Resumen titulo="Registros" valor={asistencias.length} fondo="#fef9c3" />
       </div>
 
       <div style={actions}>
@@ -473,7 +563,7 @@ function Reportes() {
         </button>
 
         <button onClick={descargarExcel} style={botonVerde}>
-          Descargar Excel
+          Descargar Excel detallado
         </button>
       </div>
 
@@ -489,29 +579,27 @@ function Reportes() {
                 <th style={th}>Grupo</th>
                 <th style={th}>Asignatura</th>
                 <th style={th}>Sesiones</th>
-                <th style={th}>Presentes</th>
-                <th style={th}>Tardanzas</th>
-                <th style={th}>Justificados</th>
-                <th style={th}>Faltas</th>
+                <th style={th}>P</th>
+                <th style={th}>T</th>
+                <th style={th}>J</th>
+                <th style={th}>F</th>
                 <th style={th}>%</th>
               </tr>
             </thead>
 
             <tbody>
-              {reporte.map(item => (
+              {reporteMatriz.map(item => (
                 <tr key={`${item.codigo}-${item.asignatura}`}>
                   <td style={td}>{item.codigo}</td>
                   <td style={td}>{item.estudiante}</td>
                   <td style={td}>{item.grupo}</td>
                   <td style={td}>{item.asignatura}</td>
                   <td style={tdCenter}>{item.totalSesiones}</td>
-                  <td style={tdCenter}>{item.presentes}</td>
-                  <td style={tdCenter}>{item.tardanzas}</td>
-                  <td style={tdCenter}>{item.justificados}</td>
-                  <td style={tdCenter}>{item.faltas}</td>
-                  <td style={tdCenter}>
-                    <strong>{item.porcentaje}%</strong>
-                  </td>
+                  <td style={tdCenter}>{item.totalP}</td>
+                  <td style={tdCenter}>{item.totalT}</td>
+                  <td style={tdCenter}>{item.totalJ}</td>
+                  <td style={tdCenter}>{item.totalF}</td>
+                  <td style={tdCenter}><strong>{item.porcentaje}%</strong></td>
                 </tr>
               ))}
             </tbody>
@@ -520,20 +608,6 @@ function Reportes() {
       )}
     </div>
   )
-}
-
-function aplicarEstilo(hoja, filaInicio, filaFin, colInicio, colFin, estilo) {
-  for (let fila = filaInicio; fila <= filaFin; fila++) {
-    for (let col = colInicio; col <= colFin; col++) {
-      const celda = XLSX.utils.encode_cell({ r: fila, c: col })
-
-      if (!hoja[celda]) {
-        hoja[celda] = { t: 's', v: '' }
-      }
-
-      hoja[celda].s = estilo
-    }
-  }
 }
 
 function Resumen({ titulo, valor, fondo }) {
@@ -546,28 +620,27 @@ function Resumen({ titulo, valor, fondo }) {
       border: '1px solid #cbd5e1'
     }}>
       <strong style={{ fontSize: '12px' }}>{titulo}</strong>
-
-      <p style={{
-        fontSize: '22px',
-        margin: '5px 0 0',
-        fontWeight: 'bold'
-      }}>
+      <p style={{ fontSize: '22px', margin: '5px 0 0', fontWeight: 'bold' }}>
         {valor}
       </p>
     </div>
   )
 }
 
-const borde = {
-  top: { style: 'thin', color: { rgb: 'CBD5E1' } },
-  bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
-  left: { style: 'thin', color: { rgb: 'CBD5E1' } },
-  right: { style: 'thin', color: { rgb: 'CBD5E1' } }
-}
-
 const page = {
   padding: '18px 12px 30px',
   fontFamily: 'Arial'
+}
+
+const titulo = {
+  textAlign: 'center',
+  marginBottom: '16px'
+}
+
+const subtitulo = {
+  marginTop: 0,
+  textAlign: 'center',
+  color: '#334155'
 }
 
 const alert = {
@@ -583,21 +656,27 @@ const card = {
   padding: '14px',
   marginBottom: '14px',
   border: '1px solid #e2e8f0',
-  display: 'grid',
-  gap: '10px',
   boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+}
+
+const gridFiltros = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: '10px'
 }
 
 const input = {
   width: '100%',
-  padding: '11px',
+  padding: '10px',
   borderRadius: '10px',
   border: '1px solid #cbd5e1',
-  fontSize: '14px',
-  boxSizing: 'border-box'
+  fontSize: '13px',
+  boxSizing: 'border-box',
+  color: '#0f172a',
+  background: 'white'
 }
 
-const statsFila = {
+const statsGrid = {
   display: 'grid',
   gridTemplateColumns: 'repeat(3, 1fr)',
   gap: '8px',
