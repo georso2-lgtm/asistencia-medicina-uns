@@ -53,12 +53,10 @@ function ListaSesiones() {
   }
 
   const unidadesDisponibles = [
-    ...new Set(
-      sesiones
-        .map(sesion => obtenerUnidad(sesion))
-        .filter(Boolean)
-    )
-  ].sort()
+  'Unidad I',
+  'Unidad II',
+  'Unidad III'
+  ]
 
   const sesionesFiltradas = sesiones.filter(sesion => {
     if (unidadFiltro && obtenerUnidad(sesion) !== unidadFiltro) {

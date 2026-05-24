@@ -81,12 +81,10 @@ function TomarAsistencia() {
   }
 
   const unidadesDisponibles = [
-    ...new Set(
-      sesiones
-        .map(sesion => obtenerUnidad(sesion))
-        .filter(Boolean)
-    )
-  ].sort()
+  'Unidad I',
+  'Unidad II',
+  'Unidad III'
+  ]
 
   const sesionesFiltradas = useMemo(() => {
     return sesiones.filter(sesion => {
