@@ -8,7 +8,7 @@ function Dashboard() {
       minHeight: '100vh',
       padding: '40px 16px',
       fontFamily: 'Arial',
-      background: '#31334d27'
+      background: '#31334d4b'
     }}>
       <div style={{
         background: 'white',

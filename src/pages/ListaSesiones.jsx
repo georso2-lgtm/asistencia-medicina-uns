@@ -7,6 +7,8 @@ function ListaSesiones() {
 
   const [sesiones, setSesiones] = useState([])
   const [sesionSeleccionada, setSesionSeleccionada] = useState('')
+  const [unidadFiltro, setUnidadFiltro] = useState('')
+  const [estadoFiltro, setEstadoFiltro] = useState('')
   const [mensaje, setMensaje] = useState('')
 
   useEffect(() => {
@@ -45,6 +47,30 @@ function ListaSesiones() {
   const obtenerHoraFin = (sesion) => {
     return sesion?.hora_fin || sesion?.hora_cierre || '--'
   }
+
+  const obtenerUnidad = (sesion) => {
+    return sesion?.unidad || 'Sin unidad'
+  }
+
+  const unidadesDisponibles = [
+    ...new Set(
+      sesiones
+        .map(sesion => obtenerUnidad(sesion))
+        .filter(Boolean)
+    )
+  ].sort()
+
+  const sesionesFiltradas = sesiones.filter(sesion => {
+    if (unidadFiltro && obtenerUnidad(sesion) !== unidadFiltro) {
+      return false
+    }
+
+    if (estadoFiltro && sesion.estado !== estadoFiltro) {
+      return false
+    }
+
+    return true
+  })
 
   const sesionActual = sesiones.find(
     item => item.id.toString() === sesionSeleccionada
@@ -134,6 +160,9 @@ function ListaSesiones() {
   const abiertas = sesiones.filter(s => s.estado === 'Abierta').length
   const cerradas = sesiones.filter(s => s.estado === 'Cerrada').length
 
+  const abiertasFiltradas = sesionesFiltradas.filter(s => s.estado === 'Abierta').length
+  const cerradasFiltradas = sesionesFiltradas.filter(s => s.estado === 'Cerrada').length
+
   const esError =
     mensaje.includes('Error') ||
     mensaje.includes('No puede') ||
@@ -141,7 +170,26 @@ function ListaSesiones() {
 
   return (
     <div style={page}>
-      <h2 style={{ marginTop: 0 }}>
+      <style>
+        {`
+          @media (max-width: 768px) {
+            .sesiones-filtros {
+              grid-template-columns: 1fr !important;
+            }
+
+            .sesiones-stats {
+              grid-template-columns: 1fr 1fr 1fr !important;
+            }
+          }
+
+          select, input {
+            color: #0f172a;
+            background-color: #ffffff;
+          }
+        `}
+      </style>
+
+      <h2 style={{ marginTop: 0, textAlign: 'center' }}>
         {perfil?.rol === 'COORDINADOR' || perfil?.rol === 'ADMINISTRADOR'
           ? 'Sesiones registradas'
           : 'Mis sesiones'}
@@ -157,10 +205,66 @@ function ListaSesiones() {
         </div>
       )}
 
-      <div style={statsFila}>
+      <div className="sesiones-stats" style={statsFila}>
         <Resumen titulo="Total" valor={sesiones.length} fondo="#e0f2fe" />
         <Resumen titulo="Abiertas" valor={abiertas} fondo="#dcfce7" />
         <Resumen titulo="Cerradas" valor={cerradas} fondo="#fee2e2" />
+      </div>
+
+      <div style={card}>
+        <h3 style={{ marginTop: 0, textAlign: 'center' }}>
+          Filtros de búsqueda
+        </h3>
+
+        <div className="sesiones-filtros" style={filtrosGrid}>
+          <div>
+            <label style={label}>
+              Unidad
+            </label>
+
+            <select
+              value={unidadFiltro}
+              onChange={(e) => {
+                setUnidadFiltro(e.target.value)
+                setSesionSeleccionada('')
+              }}
+              style={input}
+            >
+              <option value="">Todas las unidades</option>
+
+              {unidadesDisponibles.map(unidad => (
+                <option key={unidad} value={unidad}>
+                  {unidad}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={label}>
+              Estado
+            </label>
+
+            <select
+              value={estadoFiltro}
+              onChange={(e) => {
+                setEstadoFiltro(e.target.value)
+                setSesionSeleccionada('')
+              }}
+              style={input}
+            >
+              <option value="">Todos los estados</option>
+              <option value="Abierta">Abiertas</option>
+              <option value="Cerrada">Cerradas</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={resumenFiltro}>
+          Mostrando <strong>{sesionesFiltradas.length}</strong> sesiones:
+          {' '}<strong>{abiertasFiltradas}</strong> abiertas /
+          {' '}<strong>{cerradasFiltradas}</strong> cerradas
+        </div>
       </div>
 
       <button onClick={cargarSesiones} style={botonAzul}>
@@ -184,9 +288,9 @@ function ListaSesiones() {
             Seleccione una sesión...
           </option>
 
-          {sesiones.map((sesion) => (
+          {sesionesFiltradas.map((sesion) => (
             <option key={sesion.id} value={sesion.id}>
-              {sesion.fecha} | {sesion.estado} | {sesion.docente || 'Sin docente'} | {sesion.asignatura_nombre || 'Sin asignatura'} | {obtenerTipoSesion(sesion)} | {sesion.grupo}
+              {obtenerUnidad(sesion)} | {sesion.fecha} | {sesion.estado} | {sesion.docente || 'Sin docente'} | {sesion.asignatura_nombre || 'Sin asignatura'} | {obtenerTipoSesion(sesion)} | {sesion.grupo}
             </option>
           ))}
         </select>
@@ -213,7 +317,7 @@ function ListaSesiones() {
 
           <Info titulo="Docente" valor={sesionActual.docente || 'No registrado'} />
           <Info titulo="Fecha" valor={sesionActual.fecha || 'No registrada'} />
-          <Info titulo="Unidad" valor={sesionActual.unidad || 'No registrada'} />
+          <Info titulo="Unidad" valor={obtenerUnidad(sesionActual)} />
           <Info titulo="Tema" valor={sesionActual.tema || 'No registrado'} />
           <Info titulo="Tipo" valor={obtenerTipoSesion(sesionActual)} />
           <Info titulo="Grupo" valor={sesionActual.grupo || 'No registrado'} />
@@ -298,6 +402,23 @@ const statsFila = {
   marginBottom: '14px'
 }
 
+const filtrosGrid = {
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: '10px'
+}
+
+const resumenFiltro = {
+  marginTop: '12px',
+  padding: '9px',
+  borderRadius: '10px',
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
+  fontSize: '13px',
+  textAlign: 'center',
+  color: '#334155'
+}
+
 const card = {
   background: 'white',
   borderRadius: '14px',
@@ -310,17 +431,19 @@ const card = {
 const label = {
   display: 'block',
   fontWeight: 'bold',
-  marginBottom: '8px'
+  marginBottom: '8px',
+  fontSize: '13px'
 }
 
 const input = {
   width: '100%',
-  padding: '12px',
+  padding: '10px',
   borderRadius: '10px',
   border: '1px solid #cbd5e1',
-  fontSize: '14px',
+  fontSize: '13px',
   background: 'white',
-  color: '#0f172a'
+  color: '#0f172a',
+  boxSizing: 'border-box'
 }
 
 const headerDetalle = {
