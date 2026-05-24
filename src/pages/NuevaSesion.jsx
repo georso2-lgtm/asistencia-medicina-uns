@@ -265,8 +265,7 @@ function NuevaSesion() {
               <option>Unidad I</option>
               <option>Unidad II</option>
               <option>Unidad III</option>
-              <option>Unidad IV</option>
-            </select>
+              </select>
           </div>
 
           <div>
