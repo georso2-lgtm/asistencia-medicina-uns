@@ -16,6 +16,7 @@ function TomarAsistencia() {
   const [busqueda, setBusqueda] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [cargandoLista, setCargandoLista] = useState(false)
 
   useEffect(() => {
     if (perfil) {
@@ -55,35 +56,147 @@ function TomarAsistencia() {
     setSesiones(data || [])
   }
 
-  const cargarAsistencias = async () => {
-    const sesion = sesiones.find(
-      item => item.id.toString() === sesionId
-    )
+  const normalizarGrupo = (valor) => {
+    if (!valor) return ''
 
-    setSesionActual(sesion || null)
+    let texto = valor
+      .toString()
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
 
-    const { data, error } = await supabase
-      .from('asistencias')
-      .select('*')
-      .eq('sesion_id', sesionId)
-      .order('estudiante')
+    texto = texto.replace('GRUPO', '').trim()
 
-    if (error) {
-      setMensaje(`Error al cargar asistencias: ${error.message}`)
-      return
-    }
+    const coincidencia = texto.match(/[A-Z]/)
 
-    setAsistencias(data || [])
+    return coincidencia ? coincidencia[0] : texto
   }
 
   const obtenerUnidad = (sesion) => {
     return sesion?.unidad || 'Sin unidad'
   }
 
+  const obtenerTipoSesion = (sesion) => {
+    return sesion?.tipo_sesion || sesion?.tipo || ''
+  }
+
+  const obtenerCodigo = (item) => {
+    return item?.codigo || item?.codigo_estudiante || ''
+  }
+
+  const obtenerNombre = (item) => {
+    return item?.estudiante || item?.apellidos_nombres || item?.nombre_completo || ''
+  }
+
+  const cargarAsistencias = async () => {
+    setCargandoLista(true)
+    setMensaje('')
+
+    const sesion = sesiones.find(
+      item => item.id.toString() === sesionId
+    )
+
+    if (!sesion) {
+      setSesionActual(null)
+      setAsistencias([])
+      setCargandoLista(false)
+      return
+    }
+
+    setSesionActual(sesion)
+
+    const tipoSesion = obtenerTipoSesion(sesion).toUpperCase()
+    const grupoSesion = normalizarGrupo(sesion.grupo)
+
+    let queryEstudiantes = supabase
+      .from('estudiantes')
+      .select('*')
+      .eq('asignatura_id', sesion.asignatura_id)
+      .order('nombre_completo', { ascending: true })
+
+    const { data: estudiantesData, error: errorEstudiantes } = await queryEstudiantes
+
+    if (errorEstudiantes) {
+      setMensaje(`Error al cargar estudiantes: ${errorEstudiantes.message}`)
+      setCargandoLista(false)
+      return
+    }
+
+    let estudiantesSesion = estudiantesData || []
+
+    if (tipoSesion !== 'TEORIA' && tipoSesion !== 'TEORÍA') {
+      estudiantesSesion = estudiantesSesion.filter(
+        est => normalizarGrupo(est.grupo) === grupoSesion
+      )
+    }
+
+    const { data: asistenciasData, error: errorAsistencias } = await supabase
+      .from('asistencias')
+      .select('*')
+      .eq('sesion_id', sesion.id)
+      .order('estudiante', { ascending: true })
+
+    if (errorAsistencias) {
+      setMensaje(`Error al cargar asistencias: ${errorAsistencias.message}`)
+      setCargandoLista(false)
+      return
+    }
+
+    const asistenciasExistentes = asistenciasData || []
+
+    const codigosExistentes = new Set(
+      asistenciasExistentes.map(a =>
+        obtenerCodigo(a).toString()
+      )
+    )
+
+    const faltantes = estudiantesSesion.filter(est =>
+      !codigosExistentes.has(est.codigo?.toString())
+    )
+
+    if (faltantes.length > 0) {
+      const nuevosRegistros = faltantes.map(est => ({
+        sesion_id: sesion.id,
+        codigo: est.codigo,
+        estudiante: est.nombre_completo,
+        grupo: est.grupo,
+        asignatura_id: est.asignatura_id,
+        asignatura_nombre: est.asignatura_nombre,
+        estado: 'Falta',
+        tipo_registro: 'Manual'
+      }))
+
+      const { error: errorInsert } = await supabase
+        .from('asistencias')
+        .insert(nuevosRegistros)
+
+      if (errorInsert) {
+        setMensaje(`Error al preparar lista de asistencia: ${errorInsert.message}`)
+        setCargandoLista(false)
+        return
+      }
+    }
+
+    const { data: asistenciasFinales, error: errorFinal } = await supabase
+      .from('asistencias')
+      .select('*')
+      .eq('sesion_id', sesion.id)
+      .order('estudiante', { ascending: true })
+
+    if (errorFinal) {
+      setMensaje(`Error al cargar lista final: ${errorFinal.message}`)
+      setCargandoLista(false)
+      return
+    }
+
+    setAsistencias(asistenciasFinales || [])
+    setCargandoLista(false)
+  }
+
   const unidadesDisponibles = [
-  'Unidad I',
-  'Unidad II',
-  'Unidad III'
+    'Unidad I',
+    'Unidad II',
+    'Unidad III'
   ]
 
   const sesionesFiltradas = useMemo(() => {
@@ -111,14 +224,15 @@ function TomarAsistencia() {
       const texto = busqueda.toLowerCase()
 
       return (
-        item.apellidos_nombres?.toLowerCase().includes(texto) ||
-        item.codigo_estudiante?.toLowerCase().includes(texto)
+        obtenerNombre(item).toLowerCase().includes(texto) ||
+        obtenerCodigo(item).toString().toLowerCase().includes(texto)
       )
     })
   }, [asistencias, busqueda])
 
   const actualizarEstado = async (id, nuevoEstado) => {
     setGuardando(true)
+    setMensaje('')
 
     const { error } = await supabase
       .from('asistencias')
@@ -352,66 +466,78 @@ function TomarAsistencia() {
             />
           </div>
 
-          <div style={listaContainer}>
-            {asistenciasFiltradas.map((item) => (
-              <div
-                key={item.id}
-                className="fila-estudiante"
-                style={fila}
-              >
-                <div style={{ flex: 1 }}>
-                  <strong>
-                    {item.apellidos_nombres}
-                  </strong>
-
-                  <p style={codigo}>
-                    {item.codigo_estudiante}
-                  </p>
+          {cargandoLista ? (
+            <div style={guardandoBox}>
+              Preparando lista de estudiantes...
+            </div>
+          ) : (
+            <div style={listaContainer}>
+              {asistenciasFiltradas.length === 0 ? (
+                <div style={emptyBox}>
+                  No hay estudiantes para esta sesión.
                 </div>
+              ) : (
+                asistenciasFiltradas.map((item) => (
+                  <div
+                    key={item.id}
+                    className="fila-estudiante"
+                    style={fila}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <strong>
+                        {obtenerNombre(item)}
+                      </strong>
 
-                <div
-                  className="botones-estado"
-                  style={botonesEstado}
-                >
-                  <BotonEstado
-                    activo={item.estado === 'Presente'}
-                    texto="P"
-                    color="#16a34a"
-                    onClick={() =>
-                      actualizarEstado(item.id, 'Presente')
-                    }
-                  />
+                      <p style={codigo}>
+                        Código: {obtenerCodigo(item)} | Grupo: {item.grupo || '-'}
+                      </p>
+                    </div>
 
-                  <BotonEstado
-                    activo={item.estado === 'Falta'}
-                    texto="F"
-                    color="#dc2626"
-                    onClick={() =>
-                      actualizarEstado(item.id, 'Falta')
-                    }
-                  />
+                    <div
+                      className="botones-estado"
+                      style={botonesEstado}
+                    >
+                      <BotonEstado
+                        activo={item.estado === 'Presente'}
+                        texto="P"
+                        color="#16a34a"
+                        onClick={() =>
+                          actualizarEstado(item.id, 'Presente')
+                        }
+                      />
 
-                  <BotonEstado
-                    activo={item.estado === 'Tardanza'}
-                    texto="T"
-                    color="#d97706"
-                    onClick={() =>
-                      actualizarEstado(item.id, 'Tardanza')
-                    }
-                  />
+                      <BotonEstado
+                        activo={item.estado === 'Falta'}
+                        texto="F"
+                        color="#dc2626"
+                        onClick={() =>
+                          actualizarEstado(item.id, 'Falta')
+                        }
+                      />
 
-                  <BotonEstado
-                    activo={item.estado === 'Justificado'}
-                    texto="J"
-                    color="#2563eb"
-                    onClick={() =>
-                      actualizarEstado(item.id, 'Justificado')
-                    }
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+                      <BotonEstado
+                        activo={item.estado === 'Tardanza'}
+                        texto="T"
+                        color="#d97706"
+                        onClick={() =>
+                          actualizarEstado(item.id, 'Tardanza')
+                        }
+                      />
+
+                      <BotonEstado
+                        activo={item.estado === 'Justificado'}
+                        texto="J"
+                        color="#2563eb"
+                        onClick={() =>
+                          actualizarEstado(item.id, 'Justificado')
+                        }
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
 
           {guardando && (
             <div style={guardandoBox}>
@@ -590,6 +716,16 @@ const guardandoBox = {
   textAlign: 'center',
   fontWeight: 'bold',
   color: '#0369a1'
+}
+
+const emptyBox = {
+  background: '#f8fafc',
+  border: '1px solid #cbd5e1',
+  borderRadius: '12px',
+  padding: '16px',
+  textAlign: 'center',
+  color: '#475569',
+  fontWeight: 'bold'
 }
 
 export default TomarAsistencia
