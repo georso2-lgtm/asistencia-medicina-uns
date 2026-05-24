@@ -66,7 +66,7 @@ function TomarAsistencia() {
       .from('asistencias')
       .select('*')
       .eq('sesion_id', sesionId)
-      .order('apellidos_nombres')
+      .order('estudiante')
 
     if (error) {
       setMensaje(`Error al cargar asistencias: ${error.message}`)
