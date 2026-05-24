@@ -16,6 +16,7 @@ import TomarAsistencia from './pages/TomarAsistencia'
 import GenerarQR from './pages/GenerarQR'
 import Reportes from './pages/Reportes'
 import MarcarAsistencia from './pages/MarcarAsistencia'
+import MiCuenta from './pages/MiCuenta'
 
 import Navbar from './components/Navbar'
 
@@ -134,6 +135,15 @@ function App() {
           />
 
           <Route
+            path="/mi-cuenta"
+            element={
+              <LayoutConNavbar rolesPermitidos={['DOCENTE', 'COORDINADOR', 'ADMINISTRADOR']}>
+                <MiCuenta />
+              </LayoutConNavbar>
+            }
+          />
+
+          <Route
             path="/admin"
             element={
               <LayoutConNavbar rolesPermitidos={['ADMINISTRADOR']}>
@@ -150,11 +160,12 @@ function App() {
               </LayoutConNavbar>
             }
           />
+
           <Route
             path="/estudiantes"
             element={
               <LayoutConNavbar rolesPermitidos={['ADMINISTRADOR', 'COORDINADOR']}>
-               <Estudiantes />
+                <Estudiantes />
               </LayoutConNavbar>
             }
           />

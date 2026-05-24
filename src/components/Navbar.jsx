@@ -43,6 +43,7 @@ function Navbar() {
             <NavLink to="/asignaturas">Asignaturas</NavLink>
             <NavLink to="/estudiantes">Estudiantes</NavLink>
             <NavLink to="/reportes">Reportes</NavLink>
+            <NavLink to="/mi-cuenta">Mi cuenta</NavLink>
           </>
         )}
 
@@ -53,6 +54,7 @@ function Navbar() {
             <NavLink to="/sesiones">Sesiones</NavLink>
             <NavLink to="/asistencia">Asistencia</NavLink>
             <NavLink to="/reportes">Reportes</NavLink>
+            <NavLink to="/mi-cuenta">Mi cuenta</NavLink>
           </>
         )}
 
