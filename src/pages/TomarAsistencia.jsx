@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../context/AuthContext'
 
@@ -17,6 +18,10 @@ function TomarAsistencia() {
   const [mensaje, setMensaje] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [cargandoLista, setCargandoLista] = useState(false)
+
+  const [mostrarQR, setMostrarQR] = useState(false)
+  const [datosQR, setDatosQR] = useState('')
+  const [expiraQR, setExpiraQR] = useState(null)
 
   useEffect(() => {
     if (perfil) {
@@ -162,8 +167,9 @@ function TomarAsistencia() {
         grupo: est.grupo,
         asignatura_id: est.asignatura_id,
         asignatura_nombre: est.asignatura_nombre,
-        estado: 'Falta'
-     }))
+        estado: 'Falta',
+        metodo: 'DOCENTE'
+      }))
 
       const { error: errorInsert } = await supabase
         .from('asistencias')
@@ -190,6 +196,100 @@ function TomarAsistencia() {
 
     setAsistencias(asistenciasFinales || [])
     setCargandoLista(false)
+  }
+
+  const actualizarEstado = async (id, nuevoEstado) => {
+    setGuardando(true)
+    setMensaje('')
+
+    const { error } = await supabase
+      .from('asistencias')
+      .update({
+        estado: nuevoEstado,
+        metodo: 'DOCENTE'
+      })
+      .eq('id', id)
+
+    setGuardando(false)
+
+    if (error) {
+      setMensaje(`Error al actualizar asistencia: ${error.message}`)
+      return
+    }
+
+    setAsistencias(prev =>
+      prev.map(item =>
+        item.id === id
+          ? {
+              ...item,
+              estado: nuevoEstado,
+              metodo: 'DOCENTE'
+            }
+          : item
+      )
+    )
+  }
+
+  const generarQR = () => {
+    if (!sesionActual) {
+      setMensaje('Seleccione una sesión.')
+      return
+    }
+
+    if (sesionActual.estado !== 'Abierta') {
+      setMensaje('La sesión está cerrada.')
+      return
+    }
+
+    const expira = Date.now() + 10 * 60 * 1000
+
+    const url = `${window.location.origin}/marcar-asistencia?sesionId=${sesionActual.id}&expira=${expira}`
+
+    setDatosQR(url)
+    setExpiraQR(expira)
+    setMostrarQR(true)
+  }
+
+  const cerrarSesion = async () => {
+    if (!sesionActual) return
+
+    const confirmar = window.confirm(
+      '¿Cerrar esta sesión de asistencia?'
+    )
+
+    if (!confirmar) return
+
+    const { error } = await supabase
+      .from('sesiones')
+      .update({
+        estado: 'Cerrada'
+      })
+      .eq('id', sesionActual.id)
+
+    if (error) {
+      setMensaje(`Error al cerrar sesión: ${error.message}`)
+      return
+    }
+
+    setSesionActual(prev => ({
+      ...prev,
+      estado: 'Cerrada'
+    }))
+
+    setSesiones(prev =>
+      prev.map(item =>
+        item.id === sesionActual.id
+          ? {
+              ...item,
+              estado: 'Cerrada'
+            }
+          : item
+      )
+    )
+
+    setMostrarQR(false)
+
+    setMensaje('Sesión cerrada correctamente.')
   }
 
   const unidadesDisponibles = [
@@ -229,33 +329,6 @@ function TomarAsistencia() {
     })
   }, [asistencias, busqueda])
 
-  const actualizarEstado = async (id, nuevoEstado) => {
-    setGuardando(true)
-    setMensaje('')
-
-    const { error } = await supabase
-      .from('asistencias')
-      .update({
-        estado: nuevoEstado
-      })
-      .eq('id', id)
-
-    setGuardando(false)
-
-    if (error) {
-      setMensaje(`Error al actualizar asistencia: ${error.message}`)
-      return
-    }
-
-    setAsistencias(prev =>
-      prev.map(item =>
-        item.id === id
-          ? { ...item, estado: nuevoEstado }
-          : item
-      )
-    )
-  }
-
   const resumen = useMemo(() => {
     return {
       presentes: asistencias.filter(a => a.estado === 'Presente').length,
@@ -290,11 +363,6 @@ function TomarAsistencia() {
               width: 100%;
               justify-content: space-between;
             }
-          }
-
-          select, input {
-            color: #0f172a;
-            background-color: white;
           }
         `}
       </style>
@@ -403,29 +471,10 @@ function TomarAsistencia() {
       {sesionActual && (
         <>
           <div className="stats-grid" style={statsGrid}>
-            <ResumenCard
-              titulo="Presentes"
-              valor={resumen.presentes}
-              fondo="#dcfce7"
-            />
-
-            <ResumenCard
-              titulo="Faltas"
-              valor={resumen.faltas}
-              fondo="#fee2e2"
-            />
-
-            <ResumenCard
-              titulo="Tardanzas"
-              valor={resumen.tardanzas}
-              fondo="#fef3c7"
-            />
-
-            <ResumenCard
-              titulo="Justificados"
-              valor={resumen.justificados}
-              fondo="#dbeafe"
-            />
+            <ResumenCard titulo="Presentes" valor={resumen.presentes} fondo="#dcfce7" />
+            <ResumenCard titulo="Faltas" valor={resumen.faltas} fondo="#fee2e2" />
+            <ResumenCard titulo="Tardanzas" valor={resumen.tardanzas} fondo="#fef3c7" />
+            <ResumenCard titulo="Justificados" valor={resumen.justificados} fondo="#dbeafe" />
           </div>
 
           <div style={card}>
@@ -456,6 +505,30 @@ function TomarAsistencia() {
               </span>
             </div>
 
+            <div style={accionesSesion}>
+              <button
+                onClick={generarQR}
+                disabled={sesionActual.estado !== 'Abierta'}
+                style={{
+                  ...botonQR,
+                  opacity: sesionActual.estado !== 'Abierta' ? 0.5 : 1
+                }}
+              >
+                Generar QR (10 min)
+              </button>
+
+              <button
+                onClick={cerrarSesion}
+                disabled={sesionActual.estado !== 'Abierta'}
+                style={{
+                  ...botonCerrar,
+                  opacity: sesionActual.estado !== 'Abierta' ? 0.5 : 1
+                }}
+              >
+                Cerrar sesión
+              </button>
+            </div>
+
             <input
               type="text"
               style={input}
@@ -464,6 +537,32 @@ function TomarAsistencia() {
               onChange={(e) => setBusqueda(e.target.value)}
             />
           </div>
+
+          {mostrarQR && datosQR && (
+            <div style={qrContainer}>
+              <QRCodeCanvas
+                value={datosQR}
+                size={260}
+                bgColor="#ffffff"
+                fgColor="#000000"
+                level="H"
+              />
+
+              <p style={{
+                marginTop: '14px',
+                fontWeight: 'bold'
+              }}>
+                QR activo para registro de asistencia
+              </p>
+
+              <p style={{
+                color: '#dc2626',
+                fontWeight: 'bold'
+              }}>
+                Expira: {new Date(expiraQR).toLocaleTimeString()}
+              </p>
+            </div>
+          )}
 
           {cargandoLista ? (
             <div style={guardandoBox}>
@@ -488,7 +587,11 @@ function TomarAsistencia() {
                       </strong>
 
                       <p style={codigo}>
-                        Código: {obtenerCodigo(item)} | Grupo: {item.grupo || '-'}
+                        Código: {obtenerCodigo(item)}
+                        {' | '}
+                        Grupo: {item.grupo || '-'}
+                        {' | '}
+                        Modalidad: {item.metodo || 'DOCENTE'}
                       </p>
                     </div>
 
@@ -646,9 +749,7 @@ const input = {
   borderRadius: '10px',
   border: '1px solid #cbd5e1',
   fontSize: '13px',
-  boxSizing: 'border-box',
-  color: '#0f172a',
-  background: 'white'
+  boxSizing: 'border-box'
 }
 
 const statsGrid = {
@@ -677,6 +778,43 @@ const estadoBadge = {
   borderRadius: '999px',
   fontSize: '12px',
   fontWeight: 'bold'
+}
+
+const accionesSesion = {
+  display: 'flex',
+  gap: '10px',
+  flexWrap: 'wrap',
+  marginBottom: '14px'
+}
+
+const botonQR = {
+  background: '#0284c7',
+  color: 'white',
+  border: 'none',
+  padding: '10px 16px',
+  borderRadius: '10px',
+  cursor: 'pointer',
+  fontWeight: 'bold'
+}
+
+const botonCerrar = {
+  background: '#dc2626',
+  color: 'white',
+  border: 'none',
+  padding: '10px 16px',
+  borderRadius: '10px',
+  cursor: 'pointer',
+  fontWeight: 'bold'
+}
+
+const qrContainer = {
+  background: 'white',
+  borderRadius: '16px',
+  padding: '24px',
+  textAlign: 'center',
+  marginBottom: '16px',
+  border: '1px solid #cbd5e1',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
 }
 
 const listaContainer = {
