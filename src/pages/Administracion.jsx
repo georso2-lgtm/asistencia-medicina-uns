@@ -45,6 +45,19 @@ function Administracion() {
     asignaturaId: ''
   })
 
+  const [comunicados, setComunicados] = useState([])
+
+  const [comunicadoForm, setComunicadoForm] = useState({
+    titulo: '',
+    mensaje: '',
+    prioridad: 'normal',
+    activo: true,
+    fecha_inicio: '',
+    fecha_fin: ''
+  })
+
+  const [comunicadoEditando, setComunicadoEditando] = useState(null)
+
   useEffect(() => {
     cargarTodo()
   }, [])
@@ -54,7 +67,8 @@ function Administracion() {
       cargarUsuarios(),
       cargarDocentes(),
       cargarAsignaturas(),
-      cargarAsignaciones()
+      cargarAsignaciones(),
+      cargarComunicados()
     ])
   }
 
@@ -386,6 +400,141 @@ function Administracion() {
     await cargarAsignaciones()
   }
 
+
+  const cargarComunicados = async () => {
+    const { data, error } = await supabase
+      .from('comunicados')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      setMensaje(`Error al cargar comunicados: ${error.message}`)
+      return
+    }
+
+    setComunicados(data || [])
+  }
+
+  const limpiarFormularioComunicado = () => {
+    setComunicadoForm({
+      titulo: '',
+      mensaje: '',
+      prioridad: 'normal',
+      activo: true,
+      fecha_inicio: '',
+      fecha_fin: ''
+    })
+
+    setComunicadoEditando(null)
+  }
+
+  const guardarComunicado = async (e) => {
+    e.preventDefault()
+    setMensaje('')
+
+    const titulo = comunicadoForm.titulo.trim()
+    const mensajeComunicado = comunicadoForm.mensaje.trim()
+
+    if (!titulo || !mensajeComunicado) {
+      setMensaje('Ingrese título y mensaje del comunicado.')
+      return
+    }
+
+    const registro = {
+      titulo,
+      mensaje: mensajeComunicado,
+      prioridad: comunicadoForm.prioridad,
+      activo: comunicadoForm.activo,
+      fecha_inicio: comunicadoForm.fecha_inicio || null,
+      fecha_fin: comunicadoForm.fecha_fin || null,
+      creado_por: perfil?.id || null
+    }
+
+    if (comunicadoEditando) {
+      const { error } = await supabase
+        .from('comunicados')
+        .update(registro)
+        .eq('id', comunicadoEditando)
+
+      if (error) {
+        setMensaje(`Error al actualizar comunicado: ${error.message}`)
+        return
+      }
+
+      setMensaje('Comunicado actualizado correctamente.')
+    } else {
+      const { error } = await supabase
+        .from('comunicados')
+        .insert([registro])
+
+      if (error) {
+        setMensaje(`Error al registrar comunicado: ${error.message}`)
+        return
+      }
+
+      setMensaje('Comunicado registrado correctamente.')
+    }
+
+    limpiarFormularioComunicado()
+    await cargarComunicados()
+  }
+
+  const editarComunicado = (item) => {
+    setComunicadoEditando(item.id)
+
+    setComunicadoForm({
+      titulo: item.titulo || '',
+      mensaje: item.mensaje || '',
+      prioridad: item.prioridad || 'normal',
+      activo: item.activo !== false,
+      fecha_inicio: item.fecha_inicio || '',
+      fecha_fin: item.fecha_fin || ''
+    })
+
+    setSeccionAbierta('comunicados')
+    setMensaje('')
+  }
+
+  const cambiarEstadoComunicado = async (item) => {
+    const { error } = await supabase
+      .from('comunicados')
+      .update({
+        activo: !item.activo
+      })
+      .eq('id', item.id)
+
+    if (error) {
+      setMensaje(`Error al cambiar estado del comunicado: ${error.message}`)
+      return
+    }
+
+    setMensaje(
+      item.activo
+        ? 'Comunicado desactivado.'
+        : 'Comunicado activado.'
+    )
+
+    await cargarComunicados()
+  }
+
+  const eliminarComunicado = async (id) => {
+    const confirmar = window.confirm('¿Eliminar este comunicado institucional?')
+    if (!confirmar) return
+
+    const { error } = await supabase
+      .from('comunicados')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      setMensaje(`Error al eliminar comunicado: ${error.message}`)
+      return
+    }
+
+    setMensaje('Comunicado eliminado.')
+    await cargarComunicados()
+  }
+
   const esError =
     mensaje.includes('Error') ||
     mensaje.includes('Seleccione') ||
@@ -423,6 +572,7 @@ function Administracion() {
         <MiniCard titulo="Docentes" valor={docentes.length} color="#dcfce7" />
         <MiniCard titulo="Asignaturas" valor={asignaturas.length} color="#fef9c3" />
         <MiniCard titulo="Asignaciones" valor={asignaciones.length} color="#f3e8ff" />
+        <MiniCard titulo="Comunicados" valor={comunicados.length} color="#ffe4e6" />
       </div>
 
       {mensaje && (
@@ -604,6 +754,202 @@ function Administracion() {
               </button>
             </div>
           ))}
+        </div>
+      </Seccion>
+
+      <Seccion id="comunicados" abierta={seccionAbierta} setAbierta={setSeccionAbierta} titulo="Comunicados institucionales" icono="📢">
+        <div className="admin-grid" style={formGrid}>
+          <div style={box}>
+            <h3 style={boxTitle}>
+              {comunicadoEditando ? 'Editar comunicado' : 'Crear comunicado'}
+            </h3>
+
+            <form onSubmit={guardarComunicado} style={form}>
+              <input
+                style={input}
+                placeholder="Título del comunicado"
+                value={comunicadoForm.titulo}
+                onChange={(e) =>
+                  setComunicadoForm({
+                    ...comunicadoForm,
+                    titulo: e.target.value
+                  })
+                }
+              />
+
+              <textarea
+                style={textarea}
+                placeholder="Mensaje que verá el docente al ingresar al panel"
+                value={comunicadoForm.mensaje}
+                onChange={(e) =>
+                  setComunicadoForm({
+                    ...comunicadoForm,
+                    mensaje: e.target.value
+                  })
+                }
+              />
+
+              <select
+                style={input}
+                value={comunicadoForm.prioridad}
+                onChange={(e) =>
+                  setComunicadoForm({
+                    ...comunicadoForm,
+                    prioridad: e.target.value
+                  })
+                }
+              >
+                <option value="normal">Informativo</option>
+                <option value="importante">Importante</option>
+                <option value="urgente">Urgente</option>
+              </select>
+
+              <div style={dateGrid}>
+                <div>
+                  <label style={smallLabel}>Fecha inicio</label>
+                  <input
+                    type="date"
+                    style={input}
+                    value={comunicadoForm.fecha_inicio}
+                    onChange={(e) =>
+                      setComunicadoForm({
+                        ...comunicadoForm,
+                        fecha_inicio: e.target.value
+                      })
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label style={smallLabel}>Fecha fin</label>
+                  <input
+                    type="date"
+                    style={input}
+                    value={comunicadoForm.fecha_fin}
+                    onChange={(e) =>
+                      setComunicadoForm({
+                        ...comunicadoForm,
+                        fecha_fin: e.target.value
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <label style={checkRow}>
+                <input
+                  type="checkbox"
+                  checked={comunicadoForm.activo}
+                  onChange={(e) =>
+                    setComunicadoForm({
+                      ...comunicadoForm,
+                      activo: e.target.checked
+                    })
+                  }
+                />
+                Comunicado activo y visible para docentes
+              </label>
+
+              <button type="submit" style={primaryButton}>
+                {comunicadoEditando ? 'Actualizar comunicado' : 'Publicar comunicado'}
+              </button>
+
+              {comunicadoEditando && (
+                <button
+                  type="button"
+                  onClick={limpiarFormularioComunicado}
+                  style={secondaryButton}
+                >
+                  Cancelar edición
+                </button>
+              )}
+            </form>
+          </div>
+
+          <div style={box}>
+            <h3 style={boxTitle}>Vista previa</h3>
+
+            <div style={{
+              ...previewCard,
+              borderLeft: comunicadoForm.prioridad === 'urgente'
+                ? '6px solid #ef4444'
+                : comunicadoForm.prioridad === 'importante'
+                  ? '6px solid #f59e0b'
+                  : '6px solid #38bdf8'
+            }}>
+              <strong>
+                {comunicadoForm.titulo || 'Título del comunicado'}
+              </strong>
+
+              <p style={{ whiteSpace: 'pre-wrap' }}>
+                {comunicadoForm.mensaje || 'Aquí se visualizará el mensaje publicado para los docentes.'}
+              </p>
+
+              <span style={{
+                ...statusBadge,
+                background: comunicadoForm.activo ? '#16a34a' : '#64748b'
+              }}>
+                {comunicadoForm.activo ? 'ACTIVO' : 'INACTIVO'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div style={compactList}>
+          {comunicados.length === 0 ? (
+            <div style={emptyBox}>
+              No hay comunicados registrados.
+            </div>
+          ) : (
+            comunicados.map(item => (
+              <div key={item.id} className="admin-row-card" style={rowCard}>
+                <div style={{ flex: 1 }}>
+                  <strong>{item.titulo}</strong>
+
+                  <p style={smallText}>
+                    Prioridad: {item.prioridad || 'normal'} | Estado: {item.activo ? 'Activo' : 'Inactivo'}
+                  </p>
+
+                  <p style={smallText}>
+                    Vigencia: {item.fecha_inicio || 'Sin inicio'} - {item.fecha_fin || 'Sin fin'}
+                  </p>
+
+                  <p style={comunicadoResumen}>
+                    {item.mensaje}
+                  </p>
+                </div>
+
+                <div style={actionsColumn}>
+                  <button
+                    type="button"
+                    onClick={() => editarComunicado(item)}
+                    className="admin-action-button"
+                    style={smallEdit}
+                  >
+                    Editar
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => cambiarEstadoComunicado(item)}
+                    className="admin-action-button"
+                    style={item.activo ? smallWarning : smallSuccess}
+                  >
+                    {item.activo ? 'Desactivar' : 'Activar'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => eliminarComunicado(item.id)}
+                    className="admin-action-button"
+                    style={smallDanger}
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </Seccion>
     </div>
@@ -838,5 +1184,130 @@ const smallDanger = {
   fontSize: '12px',
   fontWeight: 'bold'
 }
+
+const textarea = {
+  width: '100%',
+  minHeight: '110px',
+  padding: '12px',
+  borderRadius: '12px',
+  border: '1px solid #94a3b8',
+  fontSize: '14px',
+  boxSizing: 'border-box',
+  background: '#ffffff',
+  color: '#0f172a',
+  outlineColor: '#0284c7',
+  resize: 'vertical',
+  fontFamily: 'Arial'
+}
+
+const dateGrid = {
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: '10px'
+}
+
+const smallLabel = {
+  display: 'block',
+  fontSize: '12px',
+  fontWeight: 'bold',
+  marginBottom: '4px',
+  color: '#334155'
+}
+
+const checkRow = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  fontSize: '13px',
+  color: '#334155',
+  fontWeight: 'bold'
+}
+
+const secondaryButton = {
+  background: '#475569',
+  color: 'white',
+  border: 'none',
+  padding: '12px',
+  borderRadius: '12px',
+  fontWeight: 'bold',
+  cursor: 'pointer',
+  fontSize: '14px'
+}
+
+const previewCard = {
+  background: '#ffffff',
+  padding: '14px',
+  borderRadius: '14px',
+  border: '1px solid #cbd5e1',
+  color: '#0f172a'
+}
+
+const statusBadge = {
+  display: 'inline-block',
+  color: 'white',
+  padding: '4px 9px',
+  borderRadius: '999px',
+  fontSize: '11px',
+  fontWeight: 'bold'
+}
+
+const emptyBox = {
+  background: '#f8fafc',
+  border: '1px solid #cbd5e1',
+  borderRadius: '14px',
+  padding: '14px',
+  textAlign: 'center',
+  color: '#475569',
+  fontWeight: 'bold'
+}
+
+const comunicadoResumen = {
+  margin: '6px 0 0',
+  color: '#334155',
+  fontSize: '12px',
+  whiteSpace: 'pre-wrap',
+  maxHeight: '72px',
+  overflowY: 'auto'
+}
+
+const actionsColumn = {
+  display: 'grid',
+  gap: '6px',
+  minWidth: '110px'
+}
+
+const smallEdit = {
+  background: '#f97316',
+  color: 'white',
+  border: 'none',
+  borderRadius: '10px',
+  padding: '8px 10px',
+  cursor: 'pointer',
+  fontSize: '12px',
+  fontWeight: 'bold'
+}
+
+const smallWarning = {
+  background: '#ca8a04',
+  color: 'white',
+  border: 'none',
+  borderRadius: '10px',
+  padding: '8px 10px',
+  cursor: 'pointer',
+  fontSize: '12px',
+  fontWeight: 'bold'
+}
+
+const smallSuccess = {
+  background: '#16a34a',
+  color: 'white',
+  border: 'none',
+  borderRadius: '10px',
+  padding: '8px 10px',
+  cursor: 'pointer',
+  fontSize: '12px',
+  fontWeight: 'bold'
+}
+
 
 export default Administracion
