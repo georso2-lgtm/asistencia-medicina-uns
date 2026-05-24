@@ -162,9 +162,8 @@ function TomarAsistencia() {
         grupo: est.grupo,
         asignatura_id: est.asignatura_id,
         asignatura_nombre: est.asignatura_nombre,
-        estado: 'Falta',
-        tipo_registro: 'Manual'
-      }))
+        estado: 'Falta'
+     }))
 
       const { error: errorInsert } = await supabase
         .from('asistencias')
