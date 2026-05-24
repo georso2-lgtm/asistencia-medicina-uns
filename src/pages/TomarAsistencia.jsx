@@ -491,7 +491,7 @@ const infoBox = {
   padding: '12px',
   borderRadius: '10px',
   marginBottom: '12px',
-  fontSize: '14px'
+  fontSize: '12px'
 }
 
 const label = {
@@ -503,7 +503,7 @@ const label = {
 
 const input = {
   width: '100%',
-  padding: '10px',
+  padding: '9px',
   borderRadius: '9px',
   border: '1px solid #cbd5e1'
 }
