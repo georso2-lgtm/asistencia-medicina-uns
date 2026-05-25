@@ -49,8 +49,8 @@ function Dashboard() {
 
     if (prioridad === 'importante') {
       return {
-        fondo: '#fef3c7',
-        borde: '#f59e0b',
+        fondo: '#ecb6c3',
+        borde: '#b43333',
         texto: '#92400e',
         etiqueta: 'IMPORTANTE'
       }
@@ -67,7 +67,7 @@ function Dashboard() {
   return (
     <div style={page}>
       <div style={cardPrincipal}>
-        <h1 style={titulo}>Panel docente</h1>
+        <h1 style={titulo}>PANEL DOCENTE</h1>
 
         <h2 style={nombre}>
           {perfil?.nombre}
@@ -85,7 +85,7 @@ function Dashboard() {
       <div style={comunicadosBox}>
         <div style={comunicadoHeader}>
           <h2 style={{ margin: 0 }}>
-            📢 Comunicados institucionales
+            📢 NOTA
           </h2>
 
           <button
@@ -159,14 +159,14 @@ function Dashboard() {
 
 const page = {
   minHeight: '100vh',
-  padding: '18px 16px 32px',
+  padding: '16px 14px 28px',
   fontFamily: 'Arial',
   background: '#31334d4b'
 }
 
 const cardPrincipal = {
   background: 'white',
-  padding: '20px',
+  padding: '18px',
   borderRadius: '16px',
   boxShadow: '0 4px 12px rgba(30, 30, 32, 0.42)',
   textAlign: 'center',
@@ -191,8 +191,8 @@ const ayuda = {
 
 const comunicadosBox = {
   background: 'white',
-  padding: '16px',
-  borderRadius: '16px',
+  padding: '14px',
+  borderRadius: '14px',
   boxShadow: '0 4px 12px rgba(30, 30, 32, 0.28)'
 }
 
@@ -200,17 +200,17 @@ const comunicadoHeader = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  gap: '10px',
+  gap: '8px',
   flexWrap: 'wrap',
-  marginBottom: '12px'
+  marginBottom: '10px'
 }
 
 const botonActualizar = {
   background: '#0284c7',
   color: 'white',
   border: 'none',
-  borderRadius: '10px',
-  padding: '8px 12px',
+  borderRadius: '8px',
+  padding: '6px 10px',
   fontWeight: 'bold',
   cursor: 'pointer'
 }
@@ -245,28 +245,28 @@ const listaComunicados = {
 }
 
 const comunicadoCard = {
-  padding: '12px',
-  borderRadius: '12px',
+  padding: '10px',
+  borderRadius: '10px',
   border: '1px solid rgba(15,23,42,0.08)'
 }
 
 const comunicadoTop = {
   display: 'flex',
   justifyContent: 'space-between',
-  gap: '10px',
+  gap: '8px',
   alignItems: 'center',
   flexWrap: 'wrap'
 }
 
 const comunicadoTitulo = {
-  fontSize: '16px'
+  fontSize: '14px'
 }
 
 const badge = {
   color: 'white',
-  padding: '4px 8px',
+  padding: '3px 6px',
   borderRadius: '999px',
-  fontSize: '11px',
+  fontSize: '8px',
   fontWeight: 'bold'
 }
 
@@ -278,7 +278,7 @@ const comunicadoTexto = {
 
 const fechaTexto = {
   margin: 0,
-  fontSize: '12px',
+  fontSize: '8px',
   opacity: 0.8
 }
 

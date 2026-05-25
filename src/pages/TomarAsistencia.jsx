@@ -14,7 +14,6 @@ function TomarAsistencia() {
   const [estadoFiltro, setEstadoFiltro] = useState('Abierta')
 
   const [asistencias, setAsistencias] = useState([])
-  const [busqueda, setBusqueda] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [cargandoLista, setCargandoLista] = useState(false)
@@ -33,6 +32,7 @@ function TomarAsistencia() {
     } else {
       setSesionActual(null)
       setAsistencias([])
+      setMostrarQR(false)
     }
   }, [sesionId])
 
@@ -43,6 +43,7 @@ function TomarAsistencia() {
       .from('sesiones')
       .select('*')
       .order('fecha', { ascending: false })
+      .order('hora_inicio', { ascending: false })
 
     if (perfil?.rol === 'DOCENTE') {
       query = query.eq('docente_id', perfil.docente_id)
@@ -58,8 +59,10 @@ function TomarAsistencia() {
     setSesiones(data || [])
   }
 
-  const obtenerUnidad = (sesion) =>
-    sesion?.unidad || 'Sin unidad'
+  const obtenerUnidad = (sesion) => sesion?.unidad || 'Sin unidad'
+
+  const obtenerTipoSesion = (sesion) =>
+    sesion?.tipo_sesion || sesion?.tipo || ''
 
   const obtenerCodigo = (item) =>
     item?.codigo || item?.codigo_estudiante || ''
@@ -69,6 +72,21 @@ function TomarAsistencia() {
     item?.apellidos_nombres ||
     item?.nombre_completo ||
     ''
+
+  const normalizarGrupo = (valor) => {
+    if (!valor) return ''
+
+    let texto = valor
+      .toString()
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+
+    texto = texto.replace('GRUPO', '').trim()
+
+    const coincidencia = texto.match(/[A-Z]/)
+    return coincidencia ? coincidencia[0] : texto
+  }
 
   const cargarAsistencias = async () => {
     setCargandoLista(true)
@@ -87,24 +105,95 @@ function TomarAsistencia() {
 
     setSesionActual(sesion)
 
-    const { data, error } = await supabase
+    const tipoSesion = obtenerTipoSesion(sesion).toUpperCase()
+    const grupoSesion = normalizarGrupo(sesion.grupo)
+
+    const { data: estudiantesData, error: errorEstudiantes } = await supabase
+      .from('estudiantes')
+      .select('*')
+      .eq('asignatura_id', sesion.asignatura_id)
+      .order('nombre_completo', { ascending: true })
+
+    if (errorEstudiantes) {
+      setMensaje(`Error al cargar estudiantes: ${errorEstudiantes.message}`)
+      setCargandoLista(false)
+      return
+    }
+
+    let estudiantesSesion = estudiantesData || []
+
+    if (tipoSesion !== 'TEORIA' && tipoSesion !== 'TEORÍA') {
+      estudiantesSesion = estudiantesSesion.filter(
+        est => normalizarGrupo(est.grupo) === grupoSesion
+      )
+    }
+
+    const { data: asistenciasData, error: errorAsistencias } = await supabase
       .from('asistencias')
       .select('*')
       .eq('sesion_id', sesion.id)
       .order('estudiante', { ascending: true })
 
-    if (error) {
-      setMensaje(`Error al cargar asistencias: ${error.message}`)
+    if (errorAsistencias) {
+      setMensaje(`Error al cargar asistencias: ${errorAsistencias.message}`)
       setCargandoLista(false)
       return
     }
 
-    setAsistencias(data || [])
+    const asistenciasExistentes = asistenciasData || []
+
+    const codigosExistentes = new Set(
+      asistenciasExistentes.map(a =>
+        obtenerCodigo(a).toString()
+      )
+    )
+
+    const faltantes = estudiantesSesion.filter(est =>
+      !codigosExistentes.has(est.codigo?.toString())
+    )
+
+    if (faltantes.length > 0) {
+      const nuevosRegistros = faltantes.map(est => ({
+        sesion_id: sesion.id,
+        codigo: est.codigo,
+        estudiante: est.nombre_completo,
+        grupo: est.grupo,
+        asignatura_id: est.asignatura_id,
+        asignatura_nombre: est.asignatura_nombre,
+        estado: 'Falta',
+        metodo: 'DOCENTE'
+      }))
+
+      const { error: errorInsert } = await supabase
+        .from('asistencias')
+        .insert(nuevosRegistros)
+
+      if (errorInsert) {
+        setMensaje(`Error al preparar lista de asistencia: ${errorInsert.message}`)
+        setCargandoLista(false)
+        return
+      }
+    }
+
+    const { data: asistenciasFinales, error: errorFinal } = await supabase
+      .from('asistencias')
+      .select('*')
+      .eq('sesion_id', sesion.id)
+      .order('estudiante', { ascending: true })
+
+    if (errorFinal) {
+      setMensaje(`Error al cargar lista final: ${errorFinal.message}`)
+      setCargandoLista(false)
+      return
+    }
+
+    setAsistencias(asistenciasFinales || [])
     setCargandoLista(false)
   }
 
   const actualizarEstado = async (id, nuevoEstado) => {
     setGuardando(true)
+    setMensaje('')
 
     const { error } = await supabase
       .from('asistencias')
@@ -117,7 +206,7 @@ function TomarAsistencia() {
     setGuardando(false)
 
     if (error) {
-      setMensaje(`Error: ${error.message}`)
+      setMensaje(`Error al actualizar asistencia: ${error.message}`)
       return
     }
 
@@ -135,6 +224,13 @@ function TomarAsistencia() {
   }
 
   const marcarTodos = async (nuevoEstado) => {
+    if (!sesionActual) return
+
+    if (asistencias.length === 0) {
+      setMensaje('No hay estudiantes para marcar.')
+      return
+    }
+
     const confirmar = window.confirm(
       `¿Marcar todos como ${nuevoEstado}?`
     )
@@ -142,6 +238,9 @@ function TomarAsistencia() {
     if (!confirmar) return
 
     const ids = asistencias.map(a => a.id)
+
+    setGuardando(true)
+    setMensaje('')
 
     const { error } = await supabase
       .from('asistencias')
@@ -151,8 +250,10 @@ function TomarAsistencia() {
       })
       .in('id', ids)
 
+    setGuardando(false)
+
     if (error) {
-      setMensaje(`Error: ${error.message}`)
+      setMensaje(`Error al marcar todos: ${error.message}`)
       return
     }
 
@@ -163,10 +264,20 @@ function TomarAsistencia() {
         metodo: 'DOCENTE'
       }))
     )
+
+    setMensaje(`Todos fueron marcados como ${nuevoEstado}.`)
   }
 
   const generarQR = () => {
-    if (!sesionActual) return
+    if (!sesionActual) {
+      setMensaje('Seleccione una sesión.')
+      return
+    }
+
+    if (sesionActual.estado !== 'Abierta') {
+      setMensaje('La sesión está cerrada.')
+      return
+    }
 
     const expira = Date.now() + 10 * 60 * 1000
 
@@ -179,8 +290,10 @@ function TomarAsistencia() {
   }
 
   const cerrarSesion = async () => {
+    if (!sesionActual) return
+
     const confirmar = window.confirm(
-      '¿Cerrar sesión de asistencia?'
+      '¿Cerrar esta sesión de asistencia?'
     )
 
     if (!confirmar) return
@@ -193,7 +306,7 @@ function TomarAsistencia() {
       .eq('id', sesionActual.id)
 
     if (error) {
-      setMensaje(`Error: ${error.message}`)
+      setMensaje(`Error al cerrar sesión: ${error.message}`)
       return
     }
 
@@ -202,67 +315,41 @@ function TomarAsistencia() {
       estado: 'Cerrada'
     }))
 
+    setSesiones(prev =>
+      prev.map(item =>
+        item.id === sesionActual.id
+          ? {
+              ...item,
+              estado: 'Cerrada'
+            }
+          : item
+      )
+    )
+
     setMostrarQR(false)
+    setMensaje('Sesión cerrada correctamente.')
   }
 
   const sesionesFiltradas = useMemo(() => {
     return sesiones.filter(sesion => {
-      if (
-        unidadFiltro &&
-        obtenerUnidad(sesion) !== unidadFiltro
-      ) return false
-
-      if (
-        estadoFiltro &&
-        sesion.estado !== estadoFiltro
-      ) return false
-
+      if (unidadFiltro && obtenerUnidad(sesion) !== unidadFiltro) return false
+      if (estadoFiltro && sesion.estado !== estadoFiltro) return false
       return true
     })
   }, [sesiones, unidadFiltro, estadoFiltro])
 
-  const asistenciasFiltradas = useMemo(() => {
-    return asistencias.filter(item => {
-      const texto = busqueda.toLowerCase()
-
-      return (
-        obtenerNombre(item)
-          .toLowerCase()
-          .includes(texto) ||
-
-        obtenerCodigo(item)
-          .toString()
-          .toLowerCase()
-          .includes(texto)
-      )
-    })
-  }, [asistencias, busqueda])
-
   const resumen = useMemo(() => {
     return {
       esperados: asistencias.length,
-
-      qr: asistencias.filter(
-        a => a.metodo === 'QR'
-      ).length,
-
-      presentes: asistencias.filter(
-        a => a.estado === 'Presente'
-      ).length,
-
-      faltas: asistencias.filter(
-        a => a.estado === 'Falta'
-      ).length,
-
-      tardanzas: asistencias.filter(
-        a => a.estado === 'Tardanza'
-      ).length,
-
-      justificados: asistencias.filter(
-        a => a.estado === 'Justificado'
-      ).length
+      qr: asistencias.filter(a => a.metodo === 'QR').length,
+      presentes: asistencias.filter(a => a.estado === 'Presente').length,
+      faltas: asistencias.filter(a => a.estado === 'Falta').length,
+      tardanzas: asistencias.filter(a => a.estado === 'Tardanza').length,
+      justificados: asistencias.filter(a => a.estado === 'Justificado').length
     }
   }, [asistencias])
+
+  const esError = mensaje.includes('Error')
 
   return (
     <div style={page}>
@@ -273,8 +360,12 @@ function TomarAsistencia() {
               grid-template-columns: repeat(2, 1fr) !important;
             }
 
+            .filtros-grid {
+              grid-template-columns: 1fr !important;
+            }
+
             .tabla-asistencia {
-              min-width: 640px !important;
+              min-width: 620px !important;
             }
           }
         `}
@@ -285,13 +376,19 @@ function TomarAsistencia() {
       </h2>
 
       {mensaje && (
-        <div style={alert}>
+        <div
+          style={{
+            ...alert,
+            background: esError ? '#fee2e2' : '#dcfce7',
+            color: esError ? '#991b1b' : '#166534'
+          }}
+        >
           {mensaje}
         </div>
       )}
 
       <div style={card}>
-        <div style={filtrosGrid}>
+        <div className="filtros-grid" style={filtrosGrid}>
           <select
             style={input}
             value={unidadFiltro}
@@ -300,21 +397,10 @@ function TomarAsistencia() {
               setSesionId('')
             }}
           >
-            <option value="">
-              Todas las unidades
-            </option>
-
-            <option value="Unidad I">
-              Unidad I
-            </option>
-
-            <option value="Unidad II">
-              Unidad II
-            </option>
-
-            <option value="Unidad III">
-              Unidad III
-            </option>
+            <option value="">Todas las unidades</option>
+            <option value="Unidad I">Unidad I</option>
+            <option value="Unidad II">Unidad II</option>
+            <option value="Unidad III">Unidad III</option>
           </select>
 
           <select
@@ -325,17 +411,9 @@ function TomarAsistencia() {
               setSesionId('')
             }}
           >
-            <option value="">
-              Todas
-            </option>
-
-            <option value="Abierta">
-              Abiertas
-            </option>
-
-            <option value="Cerrada">
-              Cerradas
-            </option>
+            <option value="">Todas</option>
+            <option value="Abierta">Abiertas</option>
+            <option value="Cerrada">Cerradas</option>
           </select>
         </div>
 
@@ -358,11 +436,7 @@ function TomarAsistencia() {
               key={sesion.id}
               value={sesion.id}
             >
-              {obtenerUnidad(sesion)} |
-              {sesion.fecha} |
-              {sesion.estado} |
-              {sesion.asignatura_nombre} |
-              {sesion.grupo}
+              {obtenerUnidad(sesion)} | {sesion.fecha} | {sesion.estado} | {sesion.asignatura_nombre} | {sesion.grupo}
             </option>
           ))}
         </select>
@@ -370,70 +444,51 @@ function TomarAsistencia() {
 
       {sesionActual && (
         <>
+          <div style={detalleSesion}>
+            <p><strong>Docente:</strong> {sesionActual.docente || 'No registrado'}</p>
+            <p><strong>Asignatura:</strong> {sesionActual.asignatura_nombre || 'No registrada'}</p>
+            <p><strong>Fecha:</strong> {sesionActual.fecha || '-'}</p>
+            <p><strong>Estado:</strong> {sesionActual.estado || '-'}</p>
+            <p><strong>Tipo:</strong> {obtenerTipoSesion(sesionActual) || '-'}</p>
+            <p><strong>Grupo:</strong> {sesionActual.grupo || '-'}</p>
+            <p>
+              <strong>Horario:</strong> {sesionActual.hora_inicio || '--'} - {sesionActual.hora_fin || sesionActual.hora_cierre || '--'}
+            </p>
+          </div>
+
           <div className="stats-grid" style={statsGrid}>
-            <ResumenCard
-              titulo="Esperados"
-              valor={resumen.esperados}
-              fondo="#f8fafc"
-            />
-
-            <ResumenCard
-              titulo="Marcados QR"
-              valor={resumen.qr}
-              fondo="#dcfce7"
-            />
-
-            <ResumenCard
-              titulo="Justificados"
-              valor={resumen.justificados}
-              fondo="#f3e8ff"
-            />
-
-            <ResumenCard
-              titulo="Presentes"
-              valor={resumen.presentes}
-              fondo="#dbeafe"
-            />
-
-            <ResumenCard
-              titulo="Tardanzas"
-              valor={resumen.tardanzas}
-              fondo="#fef3c7"
-            />
-
-            <ResumenCard
-              titulo="Faltas"
-              valor={resumen.faltas}
-              fondo="#fee2e2"
-            />
+            <ResumenCard titulo="Esperados" valor={resumen.esperados} fondo="#f8fafc" />
+            <ResumenCard titulo="Marcados QR" valor={resumen.qr} fondo="#dcfce7" />
+            <ResumenCard titulo="Justificados" valor={resumen.justificados} fondo="#f3e8ff" />
+            <ResumenCard titulo="Presentes" valor={resumen.presentes} fondo="#dbeafe" />
+            <ResumenCard titulo="Tardanzas" valor={resumen.tardanzas} fondo="#fef3c7" />
+            <ResumenCard titulo="Faltas" valor={resumen.faltas} fondo="#fee2e2" />
           </div>
 
           <div style={card}>
             <div style={accionesSesion}>
               <button
                 onClick={generarQR}
-                style={botonQR}
+                disabled={sesionActual.estado !== 'Abierta'}
+                style={{
+                  ...botonQR,
+                  opacity: sesionActual.estado !== 'Abierta' ? 0.5 : 1
+                }}
               >
                 Generar QR 10 min
               </button>
 
               <button
                 onClick={cerrarSesion}
-                style={botonCerrar}
+                disabled={sesionActual.estado !== 'Abierta'}
+                style={{
+                  ...botonCerrar,
+                  opacity: sesionActual.estado !== 'Abierta' ? 0.5 : 1
+                }}
               >
                 Cerrar sesión
               </button>
             </div>
-
-            <input
-              type="text"
-              style={input}
-              placeholder="Buscar estudiante..."
-              value={busqueda}
-              onChange={(e) =>
-                setBusqueda(e.target.value)
-              }
-            />
           </div>
 
           {mostrarQR && (
@@ -447,133 +502,98 @@ function TomarAsistencia() {
                 marginTop: '10px',
                 fontWeight: 'bold'
               }}>
-                Expira:
-                {' '}
-                {new Date(expiraQR)
-                  .toLocaleTimeString()}
+                QR activo para registro de asistencia
+              </p>
+
+              <p style={{
+                marginTop: '4px',
+                color: '#dc2626',
+                fontWeight: 'bold'
+              }}>
+                Expira: {new Date(expiraQR).toLocaleTimeString()}
               </p>
             </div>
           )}
 
-          <div style={tableWrap}>
-            <table
-              className="tabla-asistencia"
-              style={table}
-            >
-              <thead>
-                <tr>
-                  <th style={thCodigo}>
-                    Código
-                  </th>
+          {cargandoLista ? (
+            <div style={guardandoBox}>
+              Preparando lista de estudiantes...
+            </div>
+          ) : (
+            <div style={tableWrap}>
+              <table
+                className="tabla-asistencia"
+                style={table}
+              >
+                <thead>
+                  <tr>
+                    <th style={thCodigo}>Código</th>
+                    <th style={thNombre}>Estudiante</th>
+                    <th style={thGrupo}>Grupo</th>
+                    <th style={thEstado}>
+                      Estado
 
-                  <th style={thNombre}>
-                    Estudiante
-                  </th>
-
-                  <th style={thGrupo}>
-                    Grupo
-                  </th>
-
-                  <th style={thEstado}>
-                    Estado
-
-                    <div style={todosBox}>
-                      <button
-                        style={miniTodos}
-                        onClick={() =>
-                          marcarTodos('Presente')
-                        }
-                      >
-                        P
-                      </button>
-
-                      <button
-                        style={miniTodos}
-                        onClick={() =>
-                          marcarTodos('Falta')
-                        }
-                      >
-                        F
-                      </button>
-
-                      <button
-                        style={miniTodos}
-                        onClick={() =>
-                          marcarTodos('Tardanza')
-                        }
-                      >
-                        T
-                      </button>
-
-                      <button
-                        style={miniTodos}
-                        onClick={() =>
-                          marcarTodos('Justificado')
-                        }
-                      >
-                        J
-                      </button>
-                    </div>
-                  </th>
-
-                  <th style={thMetodo}>
-                    Modalidad
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {asistenciasFiltradas.map(item => (
-                  <tr key={item.id}>
-                    <td style={tdCodigo}>
-                      {obtenerCodigo(item)}
-                    </td>
-
-                    <td style={tdNombre}>
-                      {obtenerNombre(item)}
-                    </td>
-
-                    <td style={tdGrupo}>
-                      {item.grupo}
-                    </td>
-
-                    <td style={tdEstado}>
-                      <select
-                        value={item.estado}
-                        style={estadoSelect}
-                        onChange={(e) =>
-                          actualizarEstado(
-                            item.id,
-                            e.target.value
-                          )
-                        }
-                      >
-                        <option value="Presente">
-                          Presente
-                        </option>
-
-                        <option value="Falta">
-                          Falta
-                        </option>
-
-                        <option value="Tardanza">
-                          Tardanza
-                        </option>
-
-                        <option value="Justificado">
-                          Justificado
-                        </option>
-                      </select>
-                    </td>
-
-                    <td style={tdMetodo}>
-                      {item.metodo || 'DOCENTE'}
-                    </td>
+                      <div style={todosBox}>
+                        <button style={miniTodos} onClick={() => marcarTodos('Presente')}>P</button>
+                        <button style={miniTodos} onClick={() => marcarTodos('Falta')}>F</button>
+                        <button style={miniTodos} onClick={() => marcarTodos('Tardanza')}>T</button>
+                        <button style={miniTodos} onClick={() => marcarTodos('Justificado')}>J</button>
+                      </div>
+                    </th>
+                    <th style={thMetodo}>Modalidad</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+
+                <tbody>
+                  {asistencias.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={tdVacio}>
+                        No hay estudiantes para esta sesión.
+                      </td>
+                    </tr>
+                  ) : (
+                    asistencias.map(item => (
+                      <tr key={item.id}>
+                        <td style={tdCodigo}>
+                          {obtenerCodigo(item)}
+                        </td>
+
+                        <td style={tdNombre}>
+                          {obtenerNombre(item)}
+                        </td>
+
+                        <td style={tdGrupo}>
+                          {item.grupo || '-'}
+                        </td>
+
+                        <td style={tdEstado}>
+                          <select
+                            value={item.estado}
+                            style={estadoSelect}
+                            onChange={(e) =>
+                              actualizarEstado(
+                                item.id,
+                                e.target.value
+                              )
+                            }
+                          >
+                            <option value="Presente">Presente</option>
+                            <option value="Falta">Falta</option>
+                            <option value="Tardanza">Tardanza</option>
+                            <option value="Justificado">Justificado</option>
+                          </select>
+                        </td>
+
+                        <td style={tdMetodo}>
+                          {item.metodo || 'DOCENTE'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {guardando && (
             <div style={guardandoBox}>
@@ -618,7 +638,8 @@ function ResumenCard({
 }
 
 const page = {
-  padding: '16px'
+  padding: '16px',
+  fontFamily: 'Arial'
 }
 
 const title = {
@@ -626,12 +647,11 @@ const title = {
 }
 
 const alert = {
-  background: '#fee2e2',
-  color: '#991b1b',
   padding: '10px',
   borderRadius: '10px',
   marginBottom: '12px',
-  fontWeight: 'bold'
+  fontWeight: 'bold',
+  textAlign: 'center'
 }
 
 const card = {
@@ -653,6 +673,20 @@ const input = {
   padding: '10px',
   borderRadius: '10px',
   border: '1px solid #cbd5e1',
+  fontSize: '13px',
+  boxSizing: 'border-box',
+  color: '#0f172a',
+  background: 'white'
+}
+
+const detalleSesion = {
+  background: '#e0f2fe',
+  border: '1px solid #bae6fd',
+  borderRadius: '14px',
+  padding: '12px',
+  marginBottom: '14px',
+  textAlign: 'center',
+  color: '#334155',
   fontSize: '13px'
 }
 
@@ -666,8 +700,7 @@ const statsGrid = {
 const accionesSesion = {
   display: 'flex',
   gap: '10px',
-  flexWrap: 'wrap',
-  marginBottom: '12px'
+  flexWrap: 'wrap'
 }
 
 const botonQR = {
@@ -708,7 +741,7 @@ const tableWrap = {
 
 const table = {
   width: '100%',
-  minWidth: '640px',
+  minWidth: '620px',
   borderCollapse: 'collapse',
   fontSize: '12px'
 }
@@ -717,7 +750,7 @@ const thCodigo = {
   background: '#0f172a',
   color: 'white',
   padding: '8px',
-  width: '90px'
+  width: '82px'
 }
 
 const thNombre = {
@@ -730,52 +763,61 @@ const thGrupo = {
   background: '#0f172a',
   color: 'white',
   padding: '8px',
-  width: '45px'
+  width: '40px'
 }
 
 const thEstado = {
   background: '#0f172a',
   color: 'white',
   padding: '8px',
-  width: '120px'
+  width: '105px'
 }
 
 const thMetodo = {
   background: '#0f172a',
   color: 'white',
   padding: '8px',
-  width: '80px'
+  width: '70px'
 }
 
 const tdCodigo = {
-  padding: '6px',
+  padding: '5px',
   textAlign: 'center',
-  borderBottom: '1px solid #e2e8f0'
+  borderBottom: '1px solid #e2e8f0',
+  whiteSpace: 'nowrap'
 }
 
 const tdNombre = {
-  padding: '6px',
+  padding: '5px',
   borderBottom: '1px solid #e2e8f0'
 }
 
 const tdGrupo = {
-  padding: '6px',
+  padding: '5px',
   textAlign: 'center',
   borderBottom: '1px solid #e2e8f0'
 }
 
 const tdEstado = {
-  padding: '6px',
+  padding: '5px',
   textAlign: 'center',
   borderBottom: '1px solid #e2e8f0'
 }
 
 const tdMetodo = {
-  padding: '6px',
+  padding: '5px',
   textAlign: 'center',
   borderBottom: '1px solid #e2e8f0',
   fontWeight: 'bold',
-  fontSize: '11px'
+  fontSize: '10px'
+}
+
+const tdVacio = {
+  padding: '14px',
+  textAlign: 'center',
+  borderBottom: '1px solid #e2e8f0',
+  fontWeight: 'bold',
+  color: '#475569'
 }
 
 const estadoSelect = {
@@ -783,7 +825,9 @@ const estadoSelect = {
   padding: '4px',
   borderRadius: '8px',
   border: '1px solid #cbd5e1',
-  fontSize: '11px'
+  fontSize: '11px',
+  background: 'white',
+  color: '#0f172a'
 }
 
 const todosBox = {
@@ -808,7 +852,8 @@ const guardandoBox = {
   padding: '10px',
   borderRadius: '10px',
   textAlign: 'center',
-  fontWeight: 'bold'
+  fontWeight: 'bold',
+  color: '#1e3a8a'
 }
 
 export default TomarAsistencia
