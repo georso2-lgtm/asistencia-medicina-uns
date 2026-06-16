@@ -36,6 +36,30 @@ function TomarAsistencia() {
     }
   }, [sesionId])
 
+  useEffect(() => {
+  if (!sesionActual?.id) return
+
+  const channel = supabase
+    .channel(`asistencias-${sesionActual.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'asistencias',
+        filter: `sesion_id=eq.${sesionActual.id}`
+      },
+      async () => {
+        await cargarAsistencias()
+      }
+    )
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}, [sesionActual?.id])
+
   const cargarSesiones = async () => {
     setMensaje('')
 
