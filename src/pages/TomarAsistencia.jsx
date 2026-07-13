@@ -22,6 +22,13 @@ function TomarAsistencia() {
   const [datosQR, setDatosQR] = useState('')
   const [expiraQR, setExpiraQR] = useState(null)
 
+  //----------------------------------------------------
+// OBSERVACIONES
+//----------------------------------------------------
+  const [mostrarObservacion, setMostrarObservacion] = useState(false)
+  const [asistenciaSeleccionada, setAsistenciaSeleccionada] = useState(null)
+  const [textoObservacion, setTextoObservacion] = useState("")
+
   useEffect(() => {
     if (perfil) cargarSesiones()
   }, [perfil])
@@ -246,6 +253,41 @@ function TomarAsistencia() {
       )
     )
   }
+
+  const editarObservacion = (item) => {
+
+  setAsistenciaSeleccionada(item)
+  setTextoObservacion(item.observacion || "")
+  setMostrarObservacion(true)
+  }
+
+  const guardarObservacion = async () => {
+
+  if (!asistenciaSeleccionada) return
+  const { error } = await supabase
+    .from("asistencias")
+    .update({
+      observacion: textoObservacion
+    })
+    .eq("id", asistenciaSeleccionada.id)
+  if (error) {
+    alert("Error al guardar observación")
+    return
+  }
+
+  setAsistencias(prev =>
+    prev.map(a =>
+      a.id === asistenciaSeleccionada.id
+        ? {
+            ...a,
+            observacion: textoObservacion
+          }
+        : a
+    )
+  )
+
+  setMostrarObservacion(false)
+}
 
   const marcarTodos = async (nuevoEstado) => {
     if (!sesionActual) return
@@ -565,6 +607,7 @@ function TomarAsistencia() {
                       </div>
                     </th>
                     <th style={thMetodo}>Modalidad</th>
+                    <th style={thObservacion}>Obs.</th>
                   </tr>
                 </thead>
 
@@ -611,6 +654,25 @@ function TomarAsistencia() {
                         <td style={tdMetodo}>
                           {item.metodo || 'DOCENTE'}
                         </td>
+
+                        <td style={tdObservacion}>
+                        <button
+                          style={{
+                            ...botonObs,
+                            background: item.observacion
+                              ? "#16a34a"
+                              : "#2563eb"
+                          }}
+                          onClick={() => editarObservacion(item)}
+                          title={
+                            item.observacion
+                              ? "Editar observación"
+                              : "Agregar observación"
+                          }
+                        >
+                          📝
+                        </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -624,6 +686,84 @@ function TomarAsistencia() {
               Guardando cambios...
             </div>
           )}
+
+        {mostrarObservacion && (
+          <div style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999
+          }}>
+
+            <div style={{
+              background: "white",
+              width: "420px",
+              maxWidth: "90%",
+              borderRadius: "12px",
+              padding: "20px",
+              boxShadow: "0 10px 30px rgba(0,0,0,.25)"
+            }}>
+
+              <h3 style={{
+                marginTop:0,
+                marginBottom:15
+              }}>
+                Observación de la asistencia
+              </h3>
+
+              <textarea
+                value={textoObservacion}
+                onChange={(e)=>setTextoObservacion(e.target.value)}
+                rows={6}
+                style={{
+                  width:"100%",
+                  resize:"vertical",
+                  padding:"10px",
+                  borderRadius:"8px",
+                  border:"1px solid #cbd5e1",
+                  boxSizing:"border-box"
+                }}
+              />
+
+              <div style={{
+                display:"flex",
+                justifyContent:"flex-end",
+                gap:"10px",
+                marginTop:"15px"
+              }}>
+
+                <button
+                  onClick={()=>setMostrarObservacion(false)}
+                  style={{
+                    padding:"8px 16px"
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  onClick={guardarObservacion}
+                  style={{
+                    background:"#2563eb",
+                    color:"white",
+                    border:"none",
+                    padding:"8px 18px",
+                    borderRadius:"8px"
+                  }}
+                >
+                  Guardar
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
         </>
       )}
     </div>
@@ -804,6 +944,13 @@ const thMetodo = {
   width: '70px'
 }
 
+const thObservacion = {
+  background: '#0f172a',
+  color: 'white',
+  padding: '8px',
+  width: '55px'
+}
+
 const tdCodigo = {
   padding: '5px',
   textAlign: 'center',
@@ -834,6 +981,12 @@ const tdMetodo = {
   borderBottom: '1px solid #e2e8f0',
   fontWeight: 'bold',
   fontSize: '10px'
+}
+
+const tdObservacion = {
+  padding: '5px',
+  textAlign: 'center',
+  borderBottom: '1px solid #e2e8f0'
 }
 
 const tdVacio = {
@@ -868,6 +1021,16 @@ const miniTodos = {
   fontSize: '10px',
   fontWeight: 'bold',
   cursor: 'pointer'
+}
+
+const botonObs = {
+  background: '#2563eb',
+  color: 'white',
+  border: 'none',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  padding: '4px 8px',
+  fontSize: '14px'
 }
 
 const guardandoBox = {

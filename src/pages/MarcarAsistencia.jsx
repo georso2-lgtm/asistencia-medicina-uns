@@ -387,7 +387,7 @@ function MarcarAsistencia() {
 
         {bloqueado && (
           <p style={closeText}>
-            Puede cerrar esta página.
+            Puede cerrar esta página. Bye.
           </p>
         )}
       </div>

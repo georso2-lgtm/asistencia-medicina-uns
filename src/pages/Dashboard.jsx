@@ -168,7 +168,7 @@ const cardPrincipal = {
   background: 'white',
   padding: '18px',
   borderRadius: '16px',
-  boxShadow: '0 4px 12px rgba(30, 30, 32, 0.42)',
+  boxShadow: '0 4px 12px rgba(31, 31, 44, 0.42)',
   textAlign: 'center',
   marginBottom: '16px'
 }
