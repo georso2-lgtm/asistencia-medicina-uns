@@ -1,5 +1,6 @@
+import { exportarReporteExcel } from "../utils/reportes/excelReport";
 import { useEffect, useMemo, useState } from 'react'
-import * as XLSX from 'xlsx'
+import * as XLSX from 'xlsx-js-style'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../context/AuthContext'
 
@@ -297,163 +298,116 @@ function Reportes() {
   }, [estudiantesFiltrados, sesionesFiltradas, mapaAsistencias])
 
   const construirEncabezadoSesion = (sesion, index) => {
-    const unidad = obtenerUnidad(sesion).replace('Unidad ', 'U')
-    const fecha = sesion.fecha || ''
-    const tema = sesion.tema || 'Sin tema'
-    const tipo = obtenerTipoSesion(sesion)
 
-    return `${index + 1}. ${unidad} | ${fecha} | ${tipo} | ${tema}`
-  }
+    const fechaObj = new Date(sesion.fecha);
 
-  const autoAjustarColumnas = (datos) => {
-    if (!datos || datos.length === 0) return []
+    const meses = [
+        "Ene","Feb","Mar","Abr","May","Jun",
+        "Jul","Ago","Sep","Oct","Nov","Dic"
+    ];
 
-    const cantidadColumnas = Math.max(...datos.map(fila => fila.length))
+    const dia = String(fechaObj.getDate()).padStart(2,"0");
 
-    return Array.from({ length: cantidadColumnas }).map((_, colIndex) => {
-      const max = datos.reduce((acc, fila) => {
-        const valor = fila[colIndex] ? fila[colIndex].toString() : ''
-        return Math.max(acc, valor.length)
-      }, 10)
+    const mes = meses[fechaObj.getMonth()] || "";
 
-      return {
-        wch: Math.min(Math.max(max + 2, 10), 45)
+    const fecha = `${dia}-${mes}`;
+
+    const tipo =
+        obtenerTipoSesion(sesion) === "TEORIA"
+            ? "T"
+            : "L";
+
+    let tema = sesion.tema || "";
+
+    if (tema.length > 8) {
+        tema = tema.substring(0,8);
+    }
+
+    return `S${String(index+1).padStart(2,"0")}
+${fecha}
+${tipo}
+${tema}`;
+
+}
+
+const autoAjustarColumnas = (datos) => {
+  if (!datos || datos.length === 0) return []
+
+  const cantidadColumnas = Math.max(...datos.map(fila => fila.length))
+
+  return Array.from({ length: cantidadColumnas }).map((_, colIndex) => {
+    let max = 12
+
+    datos.forEach(fila => {
+      const valor =
+        fila[colIndex] === undefined || fila[colIndex] === null
+          ? ''
+          : fila[colIndex].toString()
+
+      if (valor.length > max) {
+        max = valor.length
       }
     })
-  }
+
+    if (colIndex === 0) max = 12
+    if (colIndex === 1) max = 38
+    if (colIndex === 2) max = 10
+    if (colIndex === 3) max = 30
+
+    return {
+      wch: Math.min(max + 3, 45)
+    }
+  })
+}
 
   const descargarExcel = () => {
-    if (sesionesFiltradas.length === 0) {
-      setMensaje('No hay sesiones para generar reporte.')
-      return
-    }
 
-    if (reporteMatriz.length === 0) {
-      setMensaje('No hay estudiantes para generar reporte.')
-      return
-    }
+  exportarReporteExcel({
 
-    const sesionesOrdenadas = [...sesionesFiltradas].sort((a, b) => {
-      const fa = `${a.fecha || ''} ${a.hora_inicio || ''}`
-      const fb = `${b.fecha || ''} ${b.hora_inicio || ''}`
-      return fa.localeCompare(fb)
-    })
+    perfil,
 
-    const encabezadoMatriz = [
-      'Código',
-      'Estudiante',
-      'Grupo',
-      'Asignatura',
-      ...sesionesOrdenadas.map((s, i) => construirEncabezadoSesion(s, i)),
-      'Total sesiones',
-      'P',
-      'T',
-      'J',
-      'F',
-      '% asistencia'
-    ]
+    filtros: {
 
-    const datosMatriz = [
-      ['REPORTE DETALLADO DE ASISTENCIA - MEDICINA HUMANA UNS'],
-      [`Fecha de emisión: ${new Date().toLocaleString()}`],
-      [`Usuario: ${perfil?.nombre || ''} | Rol: ${perfil?.rol || ''}`],
-      ['Leyenda: P = Presente | T = Tardanza | J = Justificado | F = Falta'],
-      [],
-      encabezadoMatriz,
-      ...reporteMatriz.map(item => [
-        item.codigo,
-        item.estudiante,
-        item.grupo,
-        item.asignatura,
-        ...sesionesOrdenadas.map(s => item.estados[s.id] || 'F'),
-        item.totalSesiones,
-        item.totalP,
-        item.totalT,
-        item.totalJ,
-        item.totalF,
-        `${item.porcentaje}%`
-      ])
-    ]
+  asignaturaNombre:
+    sesionesFiltradas.length > 0
+      ? (sesionesFiltradas[0].asignatura_nombre || "Todas")
+      : "Todas",
 
-    const resumen = [
-      ['RESUMEN DE ASISTENCIA - MEDICINA HUMANA UNS'],
-      [`Fecha de emisión: ${new Date().toLocaleString()}`],
-      [`Sesiones consideradas: ${sesionesOrdenadas.length}`],
-      [`Estudiantes considerados: ${reporteMatriz.length}`],
-      [],
-      [
-        'Código',
-        'Estudiante',
-        'Grupo',
-        'Asignatura',
-        'Total sesiones',
-        'Presentes',
-        'Tardanzas',
-        'Justificados',
-        'Faltas',
-        '% asistencia'
-      ],
-      ...reporteMatriz.map(item => [
-        item.codigo,
-        item.estudiante,
-        item.grupo,
-        item.asignatura,
-        item.totalSesiones,
-        item.totalP,
-        item.totalT,
-        item.totalJ,
-        item.totalF,
-        `${item.porcentaje}%`
-      ])
-    ]
+  grupo: filtros.grupo || "Todos",
 
-    const detalleSesiones = [
-      ['DETALLE DE SESIONES CONSIDERADAS'],
-      [],
-      [
-        'N°',
-        'Unidad',
-        'Fecha',
-        'Hora inicio',
-        'Hora fin',
-        'Asignatura',
-        'Tipo',
-        'Grupo',
-        'Tema',
-        'Estado'
-      ],
-      ...sesionesOrdenadas.map((s, index) => [
-        index + 1,
-        obtenerUnidad(s),
-        s.fecha || '',
-        s.hora_inicio || '',
-        s.hora_fin || s.hora_cierre || '',
-        s.asignatura_nombre || '',
-        obtenerTipoSesion(s),
-        s.grupo || '',
-        s.tema || '',
-        s.estado || ''
-      ])
-    ]
+  unidad: filtros.unidad || "Todas",
 
-    const libro = XLSX.utils.book_new()
+  semestre: ""
 
-    const hojaMatriz = XLSX.utils.aoa_to_sheet(datosMatriz)
-    hojaMatriz['!cols'] = autoAjustarColumnas(datosMatriz)
-    hojaMatriz['!freeze'] = { xSplit: 4, ySplit: 6 }
+},
 
-    const hojaResumen = XLSX.utils.aoa_to_sheet(resumen)
-    hojaResumen['!cols'] = autoAjustarColumnas(resumen)
+    estudiantesFiltrados,
 
-    const hojaSesiones = XLSX.utils.aoa_to_sheet(detalleSesiones)
-    hojaSesiones['!cols'] = autoAjustarColumnas(detalleSesiones)
+    sesionesFiltradas,
 
-    XLSX.utils.book_append_sheet(libro, hojaResumen, 'Resumen')
-    XLSX.utils.book_append_sheet(libro, hojaMatriz, 'Detalle por sesión')
-    XLSX.utils.book_append_sheet(libro, hojaSesiones, 'Sesiones')
+    sesionesOrdenadas:
 
-    XLSX.writeFile(libro, 'reporte_asistencia_detallado_uns.xlsx')
-  }
+      [...sesionesFiltradas].sort((a, b) => {
+
+        const fa = `${a.fecha || ""} ${a.hora_inicio || ""}`;
+
+        const fb = `${b.fecha || ""} ${b.hora_inicio || ""}`;
+
+        return fa.localeCompare(fb);
+
+      }),
+
+    reporteMatriz,
+
+    obtenerUnidad,
+
+    obtenerTipoSesion,
+
+    construirEncabezadoSesion
+
+  });
+
+};
 
   const esError =
     mensaje.includes('Error') ||
