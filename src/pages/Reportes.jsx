@@ -54,10 +54,17 @@ function Reportes() {
     let asistenciasLista = []
 
     if (idsSesiones.length > 0) {
+
+      console.log("IDS SESIONES", idsSesiones);
+      console.log("CANTIDAD IDS", idsSesiones.length);
+
       const { data, error } = await supabase
-        .from('asistencias')
-        .select('*')
-        .in('sesion_id', idsSesiones)
+    .from("asistencias")
+    .select("id,sesion_id,estudiante,observacion")
+    .not("observacion","is",null)
+
+    console.table(data)
+console.log("TOTAL", data.length)
 
       if (error) {
         setMensaje(`Error al cargar asistencias: ${error.message}`)
@@ -66,6 +73,12 @@ function Reportes() {
       }
 
       asistenciasLista = data || []
+
+     console.log(
+    "OBSERVACIONES CARGADAS",
+    asistenciasLista.filter(a => a.observacion)
+    );
+
     }
 
     const asignaturaIds = [
@@ -362,7 +375,14 @@ const autoAjustarColumnas = (datos) => {
 
   const descargarExcel = () => {
 
-  exportarReporteExcel({
+      console.log("Asistencias:", asistencias);
+
+    console.log(
+      "Con observación:",
+      asistencias.filter(a => a.observacion)
+    );
+  
+    exportarReporteExcel({
 
     perfil,
 
@@ -380,6 +400,8 @@ const autoAjustarColumnas = (datos) => {
   semestre: ""
 
 },
+
+    asistencias,    
 
     estudiantesFiltrados,
 

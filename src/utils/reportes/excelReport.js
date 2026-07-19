@@ -19,6 +19,7 @@ import {
 import { crearBody } from "./excelBody";
 import { crearResumen } from "./excelSummary";
 import { crearSesiones } from "./excelSessions";
+import { crearIncidencias } from "./excelIncidencias";
 
 //====================================================
 
@@ -30,6 +31,8 @@ export function exportarReporteExcel(datos) {
 
   filtros = {},
 
+  asistencias = [],
+  
   estudiantesFiltrados = [],
 
   sesionesFiltradas = [],
@@ -167,6 +170,64 @@ export function exportarReporteExcel(datos) {
     "Sesiones"
   );
 
+  //--------------------------------------------------
+// HOJA INCIDENCIAS DOCENTES
+//--------------------------------------------------
+
+const wsIncidencias = XLSX.utils.aoa_to_sheet([]);
+
+crearEncabezado(
+  wsIncidencias,
+  {
+    universidad: "UNIVERSIDAD NACIONAL DEL SANTA",
+    escuela: "ESCUELA PROFESIONAL DE MEDICINA HUMANA",
+    sistema: "SISTEMA DE GESTIÓN ACADÉMICA",
+    titulo: "REPORTE DE INCIDENCIAS DOCENTES",
+    asignatura: filtros?.asignaturaNombre || "Todas",
+    docente: perfil?.nombre || "",
+    grupo: filtros?.grupo || "Todos",
+    unidad: filtros?.unidad || "Todas",
+    semestre: filtros?.semestre || "",
+    fecha: new Date().toLocaleString(),
+    estudiantes: estudiantesFiltrados.length,
+    sesiones: sesionesOrdenadas.length
+  },
+  "H"
+);
+
+
+console.log("TOTAL ASISTENCIAS:", asistencias.length);
+
+console.log(
+  "TOTAL OBSERVACIONES:",
+  asistencias.filter(a =>
+    a.observacion &&
+    a.observacion.trim() !== ""
+  ).length
+);
+
+crearIncidencias(wsIncidencias, {
+
+  asistencias,
+
+  sesionesOrdenadas,
+
+  obtenerUnidad,
+
+  obtenerTipoSesion
+
+});
+
+configurarImpresion(wsIncidencias);
+
+alturaFilas(wsIncidencias,150);
+
+XLSX.utils.book_append_sheet(
+  libro,
+  wsIncidencias,
+  "Incidencias"
+);
+  
   //--------------------------------------------------
 
   const ahora = new Date();

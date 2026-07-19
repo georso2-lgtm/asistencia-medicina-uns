@@ -270,6 +270,8 @@ function TomarAsistencia() {
       observacion: textoObservacion
     })
     .eq("id", asistenciaSeleccionada.id)
+
+    
   if (error) {
     alert("Error al guardar observación")
     return
